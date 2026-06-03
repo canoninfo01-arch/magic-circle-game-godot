@@ -208,9 +208,7 @@ func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
 
 func _build_pre_select() -> void:
 	pre_sel_root = Control.new()
-	pre_sel_root.position = Vector2.ZERO
-	pre_sel_root.size = Vector2(W, H)
-	pre_sel_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	pre_sel_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui_layer.add_child(pre_sel_root)
 
 	# 半透明オーバーレイ
