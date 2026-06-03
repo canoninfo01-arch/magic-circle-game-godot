@@ -43,6 +43,11 @@ jobs:
           mkdir -p build
           godot --headless --export-release "Web" build/index.html
 
+      - name: Add COOP/COEP service worker (GitHub Pages 対応)
+        run: |
+          wget -q "https://raw.githubusercontent.com/gzuidhof/coi-serviceworker/master/coi-serviceworker.js" -O build/coi-sw-v2.js
+          sed -i 's|</head>|<script src="coi-sw-v2.js"></script></head>|' build/index.html
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
