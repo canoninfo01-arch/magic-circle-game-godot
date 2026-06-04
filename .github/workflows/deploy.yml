@@ -45,8 +45,25 @@ jobs:
 
       - name: Add COOP/COEP service worker (GitHub Pages 対応)
         run: |
-          wget -q "https://raw.githubusercontent.com/gzuidhof/coi-serviceworker/master/coi-serviceworker.js" -O build/coi-sw-v2.js
-          sed -i 's|</head>|<script src="coi-sw-v2.js"></script></head>|' build/index.html
+          cat > build/coi-sw.js << 'SWEOF'
+          self.addEventListener("install", () => self.skipWaiting());
+          self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+          self.addEventListener("fetch", e => {
+            if (e.request.cache === "only-if-cached" && e.request.mode !== "same-origin") return;
+            e.respondWith(fetch(e.request).then(r => {
+              if (r.status === 0) return r;
+              const h = new Headers(r.headers);
+              h.set("Cross-Origin-Opener-Policy", "same-origin");
+              h.set("Cross-Origin-Embedder-Policy", "require-corp");
+              return new Response(r.body, {status: r.status, statusText: r.statusText, headers: h});
+            }));
+          });
+          SWEOF
+
+          SCRIPT='<script>if(!window.crossOriginIsolated&&"serviceWorker"in navigator){navigator.serviceWorker.register("coi-sw.js").then(r=>{if(r.installing||r.waiting){navigator.serviceWorker.addEventListener("controllerchange",()=>location.reload())}});}</script>'
+          sed -i "s|</head>|${SCRIPT}</head>|" build/index.html
+          echo "SW size: $(wc -c < build/coi-sw.js) bytes"
+          echo "HTML head check: $(grep -c 'coi-sw' build/index.html) injection(s)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
