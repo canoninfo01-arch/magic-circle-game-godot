@@ -101,7 +101,7 @@ func _ready() -> void:
 	_build_nodes()
 	_build_pre_select()
 
-	var jp_font = load("res://fonts/jp_font.otf")
+	var jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
 		_apply_font(self, jp_font)
 
