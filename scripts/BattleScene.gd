@@ -85,6 +85,7 @@ var tech_btns      : Array   = []   # [{btn, lbl, char_idx, tech_idx}]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _ready() -> void:
+	await get_tree().process_frame
 	var sz  = get_viewport_rect().size
 	W = sz.x; H = sz.y
 	tx = W / 2.0; ty = H / 2.0 + 15.0
@@ -99,15 +100,27 @@ func _ready() -> void:
 
 	_build_nodes()
 	_build_pre_select()
+
+	var jp_font = load("res://fonts/jp_font.otf")
+	if jp_font:
+		_apply_font(self, jp_font)
+
 	_show_pre_select()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ノード構築
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+func _apply_font(node: Node, font: Font) -> void:
+	if node is Label or node is Button:
+		node.add_theme_font_override("font", font)
+	for child in node.get_children():
+		_apply_font(child, font)
+
 func _build_nodes() -> void:
 	# カメラ（シェイク用）
 	camera = Camera2D.new()
+	camera.position = Vector2(W / 2.0, H / 2.0)
 	add_child(camera)
 	camera.make_current()
 
