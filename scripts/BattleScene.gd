@@ -230,7 +230,7 @@ func _build_pre_select() -> void:
 
 	tech_btns = []
 	for ci in range(party.size()):
-		var ch   := party[ci]
+		var ch   = party[ci]
 		var row_y := H * 0.16 + ci * H * 0.23
 
 		var char_lbl = Label.new()
@@ -244,7 +244,7 @@ func _build_pre_select() -> void:
 
 		var techs: Array = ch["techniques"]
 		for ti in range(techs.size()):
-			var t     := techs[ti]
+			var t     = techs[ti]
 			var btn_w := W * 0.41
 			var btn_x := W * 0.07 + ti * (btn_w + W * 0.04)
 			var btn_y := row_y + H * 0.065
@@ -273,7 +273,7 @@ func _refresh_tech_btns() -> void:
 	for b in tech_btns:
 		var sel: bool = selected_techs[b["char_idx"]] == party[b["char_idx"]]["techniques"][b["tech_idx"]]
 		var btn: Button = b["btn"]
-		var ch := party[b["char_idx"]]
+		var ch = party[b["char_idx"]]
 		if sel:
 			btn.add_theme_color_override("font_color", Color.WHITE)
 			btn.add_theme_stylebox_override("normal", _colored_stylebox(ch["color"], 0.7))
@@ -331,7 +331,7 @@ func _update_current_char() -> void:
 		_start_fio_shrink()
 	_update_party_display()
 	_update_next_display()
-	var tech := selected_techs[party_index]
+	var tech = selected_techs[party_index]
 	tech_lbl.text = character["emoji"] + " " + tech["name"]
 	tech_lbl.add_theme_color_override("font_color", character["color"])
 
@@ -346,8 +346,8 @@ func _update_party_display() -> void:
 		slot["lbl"].add_theme_color_override("font_color", Color.WHITE if cur else ch["color"])
 
 func _update_next_display() -> void:
-	var nch  := party[next_index]
-	var nt   := selected_techs[next_index]
+	var nch  = party[next_index]
+	var nt   = selected_techs[next_index]
 	var smap := {"circle": "円", "triangle": "三角", "star": "星"}
 	next_lbl.text = "NEXT → " + nch["emoji"] + " " + nt["name"] + "（" + smap.get(nt["shape"], nt["shape"]) + "）"
 
@@ -568,7 +568,7 @@ func _get_remaining() -> float:
 func _process(_delta: float) -> void:
 	if not turn_active: return
 	var rem := _get_remaining()
-	var frozen := character["id"] == "fio" and fio_freeze_start >= 0.0
+	var frozen = character["id"] == "fio" and fio_freeze_start >= 0.0
 	timer_lbl.text = "%.1fs" % rem
 	if frozen:
 		timer_lbl.add_theme_color_override("font_color", Color(0.27, 0.67, 1.0))
@@ -663,7 +663,7 @@ func _fire_chain() -> void:
 		_advance_round(); return
 
 	# 最後のコンボがFORBIDDEN対象かチェック
-	var last  := stored_attacks[-1]
+	var last  = stored_attacks[-1]
 	var ch    := last.get("char", party[0]) as Dictionary
 	var limit := 0.5 if ch["id"] == "fio" else 0.3
 	if last["accuracy"] < 30 and randf() < limit:
@@ -692,7 +692,7 @@ func _fire_next(idx: int) -> void:
 		)
 		return
 
-	var atk  := stored_attacks[idx]
+	var atk  = stored_attacks[idx]
 	var tech := atk.get("tech", {}) as Dictionary
 	var delay := 0.9 if atk.get("is_forbidden", false) else 0.45
 
