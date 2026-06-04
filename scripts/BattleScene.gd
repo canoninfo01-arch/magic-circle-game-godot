@@ -82,16 +82,18 @@ var tech_btns      : Array   = []   # [{btn, lbl, char_idx, tech_idx}]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _ready() -> void:
+	var cl = CanvasLayer.new()
+	add_child(cl)
 	var bg = ColorRect.new()
 	bg.color = Color(0.2, 0.0, 0.4)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	cl.add_child(bg)
 	var lbl = Label.new()
-	lbl.text = "Hello BattleScene"
-	lbl.position = Vector2(80, 400)
+	lbl.text = "Hello BattleScene OK"
 	lbl.add_theme_font_size_override("font_size", 28)
 	lbl.add_theme_color_override("font_color", Color.WHITE)
-	add_child(lbl)
+	lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	cl.add_child(lbl)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ノード構築
