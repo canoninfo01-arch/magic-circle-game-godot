@@ -3,13 +3,10 @@ with open("build/index.html", "r") as f:
 script = (
     '<script>'
     'if (!window.crossOriginIsolated && "serviceWorker" in navigator) {'
-    '  navigator.serviceWorker.register("coi-sw.js").then(function(r) {'
-    '    if (r.installing) {'
-    '      navigator.serviceWorker.addEventListener("controllerchange", function() {'
-    '        location.reload();'
-    '      });'
-    '    }'
+    '  navigator.serviceWorker.addEventListener("controllerchange", function() {'
+    '    location.reload();'
     '  });'
+    '  navigator.serviceWorker.register("coi-sw.js");'
     '}'
     '</script>'
 )
