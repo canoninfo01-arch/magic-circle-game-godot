@@ -444,7 +444,9 @@ func _on_single_touch(pos: Vector2) -> void:
 		"drawn":
 			if pending_timer:
 				pending_timer = null
-			_start_drawing(pos)
+			_store_combo()
+		"final_tap":
+			_fire_chain()
 
 func _on_two_finger() -> void:
 	match game_state:
