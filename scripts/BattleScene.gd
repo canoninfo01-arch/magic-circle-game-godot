@@ -82,8 +82,10 @@ var tech_btns      : Array   = []   # [{btn, lbl, char_idx, tech_idx}]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _ready() -> void:
+	await get_tree().process_frame
 	var sz  = get_viewport_rect().size
-	W = sz.x; H = sz.y
+	W = sz.x if sz.x > 0.0 else 390.0
+	H = sz.y if sz.y > 0.0 else 844.0
 	tx = W / 2.0; ty = H / 2.0 + 15.0
 
 	party          = Characters.get_all()
