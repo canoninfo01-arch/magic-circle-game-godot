@@ -1,7 +1,7 @@
 extends Node2D
 
 const _Characters = preload("res://scripts/Characters.gd")
-const _Shapes     = preload("res://scripts/_Shapes.gd")
+const _Shapes     = preload("res://scripts/Shapes.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
