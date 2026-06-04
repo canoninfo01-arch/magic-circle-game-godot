@@ -46,24 +46,41 @@ jobs:
       - name: Add COOP/COEP service worker (GitHub Pages 対応)
         run: |
           cat > build/coi-sw.js << 'SWEOF'
-          self.addEventListener("install", () => self.skipWaiting());
-          self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
-          self.addEventListener("fetch", e => {
-            if (e.request.cache === "only-if-cached" && e.request.mode !== "same-origin") return;
-            e.respondWith(fetch(e.request).then(r => {
-              if (r.status === 0) return r;
-              const h = new Headers(r.headers);
-              h.set("Cross-Origin-Opener-Policy", "same-origin");
-              h.set("Cross-Origin-Embedder-Policy", "require-corp");
-              return new Response(r.body, {status: r.status, statusText: r.statusText, headers: h});
-            }));
-          });
-          SWEOF
+self.addEventListener("install", function() { self.skipWaiting(); });
+self.addEventListener("activate", function(e) { e.waitUntil(self.clients.claim()); });
+self.addEventListener("fetch", function(e) {
+  if (e.request.cache === "only-if-cached" && e.request.mode !== "same-origin") return;
+  e.respondWith(fetch(e.request).then(function(r) {
+    if (r.status === 0) return r;
+    var h = new Headers(r.headers);
+    h.set("Cross-Origin-Opener-Policy", "same-origin");
+    h.set("Cross-Origin-Embedder-Policy", "require-corp");
+    return new Response(r.body, {status: r.status, statusText: r.statusText, headers: h});
+  }));
+});
+SWEOF
 
-          SCRIPT='<script>if(!window.crossOriginIsolated&&"serviceWorker"in navigator){navigator.serviceWorker.register("coi-sw.js").then(r=>{if(r.installing||r.waiting){navigator.serviceWorker.addEventListener("controllerchange",()=>location.reload())}});}</script>'
-          sed -i "s|</head>|${SCRIPT}</head>|" build/index.html
-          echo "SW size: $(wc -c < build/coi-sw.js) bytes"
-          echo "HTML head check: $(grep -c 'coi-sw' build/index.html) injection(s)"
+          python3 - << 'PYEOF'
+with open("build/index.html", "r") as f:
+    html = f.read()
+script = (
+    '<script>'
+    'if (!window.crossOriginIsolated && "serviceWorker" in navigator) {'
+    '  navigator.serviceWorker.register("coi-sw.js").then(function(r) {'
+    '    if (r.installing) {'
+    '      navigator.serviceWorker.addEventListener("controllerchange", function() {'
+    '        location.reload();'
+    '      });'
+    '    }'
+    '  });'
+    '}'
+    '</script>'
+)
+html = html.replace("</head>", script + "</head>", 1)
+with open("build/index.html", "w") as f:
+    f.write(html)
+print("Injection OK, coi-sw count:", html.count("coi-sw"))
+PYEOF
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
