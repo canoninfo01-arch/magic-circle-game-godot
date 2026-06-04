@@ -1,5 +1,8 @@
 extends Node2D
 
+const _Characters = preload("res://scripts/Characters.gd")
+const _Shapes     = preload("res://scripts/_Shapes.gd")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -318,7 +321,7 @@ func _update_current_char() -> void:
 	current_shape = selected_techs[party_index]["shape"]
 	fio_guide_r   = TARGET_R
 	if fio_tween: fio_tween.kill(); fio_tween = null
-	sample_pts    = Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
+	sample_pts    = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
 	_redraw_guide()
 	_apply_guide_style()
 	if character["id"] == "fio" and turn_active:
@@ -351,7 +354,7 @@ func _update_next_display() -> void:
 
 func _redraw_guide(r: float = -1.0) -> void:
 	var rad := r if r > 0.0 else fio_guide_r if character.get("id") == "fio" else TARGET_R
-	var pts := Shapes.make_guide_pts(current_shape, tx, ty, rad)
+	var pts := _Shapes.make_guide_pts(current_shape, tx, ty, rad)
 	var col  : Color = character.get("color", Color(0.267, 0.667, 1.0))
 	guide_rail.points = pts; guide_rail.default_color = Color(col.r, col.g, col.b, 0.14)
 	guide_line.points = pts; guide_line.default_color = Color(col.r, col.g, col.b, 0.9)
@@ -457,7 +460,7 @@ func _start_drawing(pos: Vector2) -> void:
 
 	# サンプル点をフィオの現在半径でスナップ
 	var r := fio_guide_r if character["id"] == "fio" else TARGET_R
-	sample_pts = Shapes.make_sample_pts(current_shape, tx, ty, r)
+	sample_pts = _Shapes.make_sample_pts(current_shape, tx, ty, r)
 
 	if character["id"] == "fio" and fio_freeze_start < 0.0:
 		fio_freeze_start = Time.get_ticks_msec() / 1000.0
@@ -631,7 +634,7 @@ func _store_combo() -> void:
 
 	if character["id"] == "fio" and fio_freeze_start < 0.0:
 		fio_freeze_start = Time.get_ticks_msec() / 1000.0
-	sample_pts = Shapes.make_sample_pts(current_shape, tx, ty,
+	sample_pts = _Shapes.make_sample_pts(current_shape, tx, ty,
 		fio_guide_r if character["id"] == "fio" else TARGET_R)
 
 func _show_combo_flash(sc: Dictionary) -> void:
