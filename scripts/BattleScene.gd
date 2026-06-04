@@ -442,11 +442,7 @@ func _on_single_touch(pos: Vector2) -> void:
 		"drawing":
 			pass   # ドラッグは InputEventScreenDrag で処理
 		"drawn":
-			if pending_timer:
-				pending_timer = null
-			_store_combo()
-		"final_tap":
-			_fire_chain()
+			pass   # 2本指タップ(_on_two_finger)で確定する
 
 func _on_two_finger() -> void:
 	match game_state:
@@ -494,7 +490,7 @@ func _end_drawing() -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec   += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start  = -1.0
-	pending_timer = get_tree().create_timer(0.2)
+	pending_timer = get_tree().create_timer(2.0)
 	pending_timer.timeout.connect(func():
 		pending_timer = null
 		if game_state == "drawn": game_state = "idle"
