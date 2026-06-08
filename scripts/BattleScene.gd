@@ -450,7 +450,7 @@ func _on_two_finger() -> void:
 			_store_combo()
 		"drawn":
 			if pending_timer: pending_timer = null
-			_store_combo()
+			_store_combo(true)   # 指を離してから確定→idle経由で次の描画へ
 		"final_tap":
 			_fire_chain()
 
@@ -619,7 +619,7 @@ func _blink_hint() -> void:
 # コンボ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-func _store_combo() -> void:
+func _store_combo(go_idle: bool = false) -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start = -1.0
@@ -644,9 +644,9 @@ func _store_combo() -> void:
 	hint_lbl.text = ""; hint_lbl.modulate.a = 1.0
 	hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
 	draw_start_sec = Time.get_ticks_msec() / 1000.0
-	game_state = "drawing"
+	game_state = "idle" if go_idle else "drawing"
 
-	if character["id"] == "fio" and fio_freeze_start < 0.0:
+	if not go_idle and character["id"] == "fio" and fio_freeze_start < 0.0:
 		fio_freeze_start = Time.get_ticks_msec() / 1000.0
 	sample_pts = _Shapes.make_sample_pts(current_shape, tx, ty,
 		fio_guide_r if character["id"] == "fio" else TARGET_R)
