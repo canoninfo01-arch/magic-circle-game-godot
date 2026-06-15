@@ -217,25 +217,24 @@ func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
 	return l
 
 func _build_intro() -> void:
-	# ui_layer と同じ CanvasLayer 方式。Control 経由だとサイズが取れないため。
 	intro_layer = CanvasLayer.new()
-	intro_layer.layer = 2   # ui_layer(1) より上
+	intro_layer.layer = 2
 	intro_layer.visible = false
 	add_child(intro_layer)
 
 	var bg = ColorRect.new()
-	bg.color = Color(0.04, 0.04, 0.10)
+	bg.color = Color(0.04, 0.04, 0.12)
 	bg.size = Vector2(W, H)
 	intro_layer.add_child(bg)
 
-	var title = Label.new()
-	title.text = "パーティ紹介"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(W, 36)
-	title.position = Vector2(0, 20)
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
-	intro_layer.add_child(title)
+	var title_lbl = Label.new()
+	title_lbl.text = "パーティ紹介"
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_lbl.size = Vector2(W, 36)
+	title_lbl.position = Vector2(0, 20)
+	title_lbl.add_theme_font_size_override("font_size", 22)
+	title_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
+	intro_layer.add_child(title_lbl)
 
 	var card_h  := 128.0
 	var card_gap := 12.0
@@ -246,15 +245,16 @@ func _build_intro() -> void:
 		var ch   = party[i]
 		var tech = ch["techniques"][0]
 		var cy   := top_y + i * (card_h + card_gap)
+		var col  : Color = ch["color"]
 
 		var card_bg = ColorRect.new()
-		card_bg.color = Color(ch["color"].r * 0.22, ch["color"].g * 0.22, ch["color"].b * 0.22)
+		card_bg.color = Color(col.r * 0.22, col.g * 0.22, col.b * 0.22)
 		card_bg.size = Vector2(W - 32, card_h)
 		card_bg.position = Vector2(16, cy)
 		intro_layer.add_child(card_bg)
 
 		var accent = ColorRect.new()
-		accent.color = ch["color"]
+		accent.color = col
 		accent.size = Vector2(5, card_h)
 		accent.position = Vector2(16, cy)
 		intro_layer.add_child(accent)
@@ -265,7 +265,7 @@ func _build_intro() -> void:
 		name_lbl.size = Vector2(W - 52, 28)
 		name_lbl.position = Vector2(30, cy + 8)
 		name_lbl.add_theme_font_size_override("font_size", 18)
-		name_lbl.add_theme_color_override("font_color", ch["color"])
+		name_lbl.add_theme_color_override("font_color", col)
 		intro_layer.add_child(name_lbl)
 
 		var tname_lbl = Label.new()
@@ -286,21 +286,14 @@ func _build_intro() -> void:
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
 		intro_layer.add_child(desc_lbl)
 
-	var btn = Button.new()
-	btn.text = "▶  BATTLE  START"
-	btn.size = Vector2(280, 52)
-	btn.position = Vector2((W - 280) / 2.0, H - 80)
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.2, 0.5, 1.0)
-	style.corner_radius_top_left     = 10
-	style.corner_radius_top_right    = 10
-	style.corner_radius_bottom_left  = 10
-	style.corner_radius_bottom_right = 10
-	btn.add_theme_stylebox_override("normal", style)
-	btn.add_theme_color_override("font_color", Color.WHITE)
-	btn.add_theme_font_size_override("font_size", 18)
-	btn.pressed.connect(_on_intro_start)
-	intro_layer.add_child(btn)
+	var tap_lbl = Label.new()
+	tap_lbl.text = "▶  タップしてスタート"
+	tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tap_lbl.size = Vector2(W, 36)
+	tap_lbl.position = Vector2(0, H - 72)
+	tap_lbl.add_theme_font_size_override("font_size", 18)
+	tap_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	intro_layer.add_child(tap_lbl)
 
 func _show_intro() -> void:
 	game_state = "intro"
@@ -416,7 +409,13 @@ func _input(event: InputEvent) -> void:
 		if tapped:
 			get_tree().reload_current_scene()
 		return
-	if game_state == "chaining" or game_state == "intro":
+	if game_state == "intro":
+		var tapped := (event is InputEventScreenTouch and event.pressed) or \
+		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
+		if tapped:
+			_on_intro_start()
+		return
+	if game_state == "chaining":
 		return
 
 	if event is InputEventScreenTouch:
