@@ -218,77 +218,84 @@ func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
 
 func _build_intro() -> void:
 	intro_root = Control.new()
-	intro_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	intro_root.size = Vector2(W, H)
+	intro_root.position = Vector2.ZERO
 	intro_root.visible = false
 	ui_layer.add_child(intro_root)
 
-	# 半透明背景
+	# 背景
 	var bg = ColorRect.new()
 	bg.color = Color(0.04, 0.04, 0.10, 0.97)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.size = Vector2(W, H)
+	bg.position = Vector2.ZERO
 	intro_root.add_child(bg)
 
 	# タイトル
 	var title = Label.new()
 	title.text = "パーティ紹介"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(W, 32)
-	title.position = Vector2(0, 24)
+	title.size = Vector2(W, 36)
+	title.position = Vector2(0, 20)
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
 	intro_root.add_child(title)
 
-	# キャラカード（縦に3枚）
+	# キャラカード（縦に3枚）— すべて intro_root 直下に絶対座標で配置
 	var card_h  := 128.0
 	var card_gap := 12.0
-	var top_y   := 70.0
+	var top_y   := 68.0
+	var smap    := {"circle": "円", "triangle": "三角", "star": "星"}
 	var all_chars := _Characters.get_all()
+
 	for i in range(all_chars.size()):
-		var ch  = all_chars[i]
+		var ch   = all_chars[i]
 		var tech = ch["techniques"][0]
-		var cy  := top_y + i * (card_h + card_gap)
+		var cy   := top_y + i * (card_h + card_gap)
 
-		var card = ColorRect.new()
-		card.color = Color(ch["color"].r * 0.25, ch["color"].g * 0.25, ch["color"].b * 0.25, 1.0)
-		card.size = Vector2(W - 32, card_h)
-		card.position = Vector2(16, cy)
-		intro_root.add_child(card)
+		# カード背景
+		var card_bg = ColorRect.new()
+		card_bg.color = Color(ch["color"].r * 0.22, ch["color"].g * 0.22, ch["color"].b * 0.22, 1.0)
+		card_bg.size = Vector2(W - 32, card_h)
+		card_bg.position = Vector2(16, cy)
+		intro_root.add_child(card_bg)
 
-		# 左側アクセントライン
+		# 左側アクセントバー
 		var accent = ColorRect.new()
 		accent.color = ch["color"]
 		accent.size = Vector2(5, card_h)
-		accent.position = Vector2(0, 0)
-		card.add_child(accent)
+		accent.position = Vector2(16, cy)
+		intro_root.add_child(accent)
 
-		# 絵文字＋名前
+		# 名前ラベル
 		var name_lbl = Label.new()
 		name_lbl.text = ch["emoji"] + "  " + ch["name"] + "  【" + ch["attr"] + "】"
-		name_lbl.position = Vector2(14, 10)
-		name_lbl.size = Vector2(W - 60, 28)
-		name_lbl.add_theme_font_size_override("font_size", 20)
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		name_lbl.size = Vector2(W - 52, 28)
+		name_lbl.position = Vector2(30, cy + 8)
+		name_lbl.add_theme_font_size_override("font_size", 18)
 		name_lbl.add_theme_color_override("font_color", ch["color"])
-		card.add_child(name_lbl)
+		intro_root.add_child(name_lbl)
 
-		# 技名
-		var tech_name_lbl = Label.new()
-		var smap := {"circle": "円", "triangle": "三角", "star": "星"}
-		tech_name_lbl.text = "技：" + tech["name"] + "（" + smap.get(tech["shape"], tech["shape"]) + "）"
-		tech_name_lbl.position = Vector2(14, 44)
-		tech_name_lbl.size = Vector2(W - 60, 24)
-		tech_name_lbl.add_theme_font_size_override("font_size", 14)
-		tech_name_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.8))
-		card.add_child(tech_name_lbl)
+		# 技ラベル
+		var tname_lbl = Label.new()
+		tname_lbl.text = "技：" + tech["name"] + "（" + smap.get(tech["shape"], tech["shape"]) + "）"
+		tname_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		tname_lbl.size = Vector2(W - 52, 22)
+		tname_lbl.position = Vector2(30, cy + 42)
+		tname_lbl.add_theme_font_size_override("font_size", 13)
+		tname_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.8))
+		intro_root.add_child(tname_lbl)
 
-		# 説明文
+		# 説明ラベル
 		var desc_lbl = Label.new()
 		desc_lbl.text = ch["desc"]
-		desc_lbl.position = Vector2(14, 72)
-		desc_lbl.size = Vector2(W - 60, 50)
-		desc_lbl.add_theme_font_size_override("font_size", 12)
+		desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		desc_lbl.size = Vector2(W - 52, 56)
+		desc_lbl.position = Vector2(30, cy + 68)
+		desc_lbl.add_theme_font_size_override("font_size", 11)
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
 		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card.add_child(desc_lbl)
+		intro_root.add_child(desc_lbl)
 
 	# BATTLE STARTボタン
 	var btn = Button.new()
@@ -297,9 +304,9 @@ func _build_intro() -> void:
 	btn.position = Vector2((W - 280) / 2.0, H - 80)
 	var style = StyleBoxFlat.new()
 	style.bg_color = Color(0.2, 0.5, 1.0)
-	style.corner_radius_top_left    = 10
-	style.corner_radius_top_right   = 10
-	style.corner_radius_bottom_left = 10
+	style.corner_radius_top_left     = 10
+	style.corner_radius_top_right    = 10
+	style.corner_radius_bottom_left  = 10
 	style.corner_radius_bottom_right = 10
 	btn.add_theme_stylebox_override("normal", style)
 	btn.add_theme_color_override("font_color", Color.WHITE)
