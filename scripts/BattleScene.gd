@@ -19,15 +19,15 @@ var tx: float; var ty: float   # target center
 # パーティ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var party          : Array = []
-var selected_techs : Array = []
 var party_index    : int   = 0
+var intro_root     : Control = null
 var next_index     : int   = 0
 var character      : Dictionary = {}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # バトル状態
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var game_state    : String = "pre_select"
+var game_state    : String = "idle"
 var boss_max_hp   : int    = 1000
 var boss_hp       : int    = 1000
 var player_max_hp : int    = 300
@@ -49,6 +49,7 @@ var sample_pts       : Array[Vector2] = []
 var fio_guide_r      : float = TARGET_R
 var fio_tween        : Tween = null
 var guide_tween      : Tween = null   # アギのフェード
+var blink_tween      : Tween = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画
@@ -77,8 +78,6 @@ var hint_lbl       : Label;     var tech_lbl       : Label
 var next_lbl       : Label
 var party_slots    : Array = []   # [{bg, lbl}]
 
-var pre_sel_root   : Control = null
-var tech_btns      : Array   = []   # [{btn, lbl, char_idx, tech_idx}]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -91,21 +90,20 @@ func _ready() -> void:
 	tx = W / 2.0; ty = H / 2.0 + 15.0
 
 	party          = _Characters.get_all()
-	selected_techs = party.map(func(c): return c["techniques"][0])
 	party_index    = randi() % party.size()
 	next_index     = randi() % party.size()
 	character      = party[party_index]
-	current_shape  = selected_techs[party_index]["shape"]
+	current_shape  = party[party_index]["techniques"][0]["shape"]
 	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
 
 	_build_nodes()
-	_build_pre_select()
+	_build_intro()
 
 	var jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
 		_apply_font(self, jp_font)
 
-	_show_pre_select()
+	_show_intro()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ノード構築
@@ -218,96 +216,107 @@ func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
 	# Store x hint for centering — label spans full width so origin is fine
 	return l
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 技選択UI (PreSelect)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _build_intro() -> void:
+	intro_root = Control.new()
+	intro_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	intro_root.visible = false
+	ui_layer.add_child(intro_root)
 
-func _build_pre_select() -> void:
-	pre_sel_root = Control.new()
-	pre_sel_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui_layer.add_child(pre_sel_root)
+	# 半透明背景
+	var bg = ColorRect.new()
+	bg.color = Color(0.04, 0.04, 0.10, 0.97)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	intro_root.add_child(bg)
 
-	# 半透明オーバーレイ
-	var overlay = ColorRect.new()
-	overlay.color = Color(0, 0, 0, 0.85)
-	overlay.size = Vector2(W, H)
-	pre_sel_root.add_child(overlay)
+	# タイトル
+	var title = Label.new()
+	title.text = "パーティ紹介"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.size = Vector2(W, 32)
+	title.position = Vector2(0, 24)
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
+	intro_root.add_child(title)
 
-	var title_lbl = Label.new()
-	title_lbl.text = "── 技選択 ──"
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_lbl.size = Vector2(W, 30); title_lbl.position = Vector2(0, H * 0.06)
-	title_lbl.add_theme_font_size_override("font_size", 18)
-	title_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
-	pre_sel_root.add_child(title_lbl)
+	# キャラカード（縦に3枚）
+	var card_h  := 128.0
+	var card_gap := 12.0
+	var top_y   := 70.0
+	var all_chars := _Characters.get_all()
+	for i in range(all_chars.size()):
+		var ch  = all_chars[i]
+		var tech = ch["techniques"][0]
+		var cy  := top_y + i * (card_h + card_gap)
 
-	tech_btns = []
-	for ci in range(party.size()):
-		var ch   = party[ci]
-		var row_y := H * 0.16 + ci * H * 0.23
+		var card = ColorRect.new()
+		card.color = Color(ch["color"].r * 0.25, ch["color"].g * 0.25, ch["color"].b * 0.25, 1.0)
+		card.size = Vector2(W - 32, card_h)
+		card.position = Vector2(16, cy)
+		intro_root.add_child(card)
 
-		var char_lbl = Label.new()
-		char_lbl.text = ch["emoji"] + " " + ch["name"]
-		char_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		char_lbl.size = Vector2(W * 0.6, 20)
-		char_lbl.position = Vector2(W * 0.07, row_y)
-		char_lbl.add_theme_font_size_override("font_size", 14)
-		char_lbl.add_theme_color_override("font_color", ch["color"])
-		pre_sel_root.add_child(char_lbl)
+		# 左側アクセントライン
+		var accent = ColorRect.new()
+		accent.color = ch["color"]
+		accent.size = Vector2(5, card_h)
+		accent.position = Vector2(0, 0)
+		card.add_child(accent)
 
-		var techs: Array = ch["techniques"]
-		for ti in range(techs.size()):
-			var t     = techs[ti]
-			var btn_w := W * 0.41
-			var btn_x := W * 0.07 + ti * (btn_w + W * 0.04)
-			var btn_y := row_y + H * 0.065
+		# 絵文字＋名前
+		var name_lbl = Label.new()
+		name_lbl.text = ch["emoji"] + "  " + ch["name"] + "  【" + ch["attr"] + "】"
+		name_lbl.position = Vector2(14, 10)
+		name_lbl.size = Vector2(W - 60, 28)
+		name_lbl.add_theme_font_size_override("font_size", 20)
+		name_lbl.add_theme_color_override("font_color", ch["color"])
+		card.add_child(name_lbl)
 
-			var btn = Button.new()
-			btn.text = t["name"]
-			btn.size = Vector2(btn_w, 36); btn.position = Vector2(btn_x, btn_y)
-			btn.add_theme_font_size_override("font_size", 13)
-			btn.pressed.connect(_on_tech_btn.bind(ci, ti))
-			pre_sel_root.add_child(btn)
-			tech_btns.append({"btn": btn, "char_idx": ci, "tech_idx": ti})
+		# 技名
+		var tech_name_lbl = Label.new()
+		var smap := {"circle": "円", "triangle": "三角", "star": "星"}
+		tech_name_lbl.text = "技：" + tech["name"] + "（" + smap.get(tech["shape"], tech["shape"]) + "）"
+		tech_name_lbl.position = Vector2(14, 44)
+		tech_name_lbl.size = Vector2(W - 60, 24)
+		tech_name_lbl.add_theme_font_size_override("font_size", 14)
+		tech_name_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.8))
+		card.add_child(tech_name_lbl)
 
-	var start_btn = Button.new()
-	start_btn.text = "▶  BATTLE START"
-	start_btn.size = Vector2(W * 0.55, 50)
-	start_btn.position = Vector2(W * 0.225, H * 0.865)
-	start_btn.add_theme_font_size_override("font_size", 16)
-	start_btn.pressed.connect(_hide_pre_select)
-	pre_sel_root.add_child(start_btn)
+		# 説明文
+		var desc_lbl = Label.new()
+		desc_lbl.text = ch["desc"]
+		desc_lbl.position = Vector2(14, 72)
+		desc_lbl.size = Vector2(W - 60, 50)
+		desc_lbl.add_theme_font_size_override("font_size", 12)
+		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card.add_child(desc_lbl)
 
-func _on_tech_btn(ci: int, ti: int) -> void:
-	selected_techs[ci] = party[ci]["techniques"][ti]
-	_refresh_tech_btns()
+	# BATTLE STARTボタン
+	var btn = Button.new()
+	btn.text = "▶  BATTLE  START"
+	btn.size = Vector2(280, 52)
+	btn.position = Vector2((W - 280) / 2.0, H - 80)
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.5, 1.0)
+	style.corner_radius_top_left    = 10
+	style.corner_radius_top_right   = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	btn.add_theme_stylebox_override("normal", style)
+	btn.add_theme_color_override("font_color", Color.WHITE)
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.pressed.connect(_on_intro_start)
+	intro_root.add_child(btn)
 
-func _refresh_tech_btns() -> void:
-	for b in tech_btns:
-		var sel: bool = selected_techs[b["char_idx"]] == party[b["char_idx"]]["techniques"][b["tech_idx"]]
-		var btn: Button = b["btn"]
-		var ch = party[b["char_idx"]]
-		if sel:
-			btn.add_theme_color_override("font_color", Color.WHITE)
-			btn.add_theme_stylebox_override("normal", _colored_stylebox(ch["color"], 0.7))
-		else:
-			btn.remove_theme_color_override("font_color")
-			btn.remove_theme_stylebox_override("normal")
+func _show_intro() -> void:
+	game_state = "intro"
+	intro_root.visible = true
 
-func _colored_stylebox(color: Color, alpha: float) -> StyleBoxFlat:
-	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(color.r, color.g, color.b, alpha)
-	sb.set_corner_radius_all(4)
-	return sb
+func _on_intro_start() -> void:
+	intro_root.visible = false
+	_start_round()
 
-func _show_pre_select() -> void:
-	game_state = "pre_select"
-	pre_sel_root.visible = true
-	next_lbl.text = ""
-	_refresh_tech_btns()
-
-func _hide_pre_select() -> void:
-	pre_sel_root.visible = false
+func _start_round() -> void:
+	active_touches.clear()
 	party_index   = randi() % party.size()
 	next_index    = randi() % party.size()
 	turn_active   = false
@@ -323,6 +332,8 @@ func _hide_pre_select() -> void:
 	_update_current_char()
 
 func _clear_display() -> void:
+	if blink_tween: blink_tween.kill(); blink_tween = null
+	hint_lbl.modulate.a = 1.0
 	trace_line.clear_points()
 	result_lbl.text = ""; power_lbl.text = ""
 	hint_lbl.text = "Fill the shape!!"; hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
@@ -334,7 +345,7 @@ func _clear_display() -> void:
 
 func _update_current_char() -> void:
 	character     = party[party_index]
-	current_shape = selected_techs[party_index]["shape"]
+	current_shape = party[party_index]["techniques"][0]["shape"]
 	fio_guide_r   = TARGET_R
 	if fio_tween: fio_tween.kill(); fio_tween = null
 	sample_pts    = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
@@ -344,7 +355,7 @@ func _update_current_char() -> void:
 		_start_fio_shrink()
 	_update_party_display()
 	_update_next_display()
-	var tech = selected_techs[party_index]
+	var tech = party[party_index]["techniques"][0]
 	tech_lbl.text = character["emoji"] + " " + tech["name"]
 	tech_lbl.add_theme_color_override("font_color", character["color"])
 
@@ -360,7 +371,7 @@ func _update_party_display() -> void:
 
 func _update_next_display() -> void:
 	var nch  = party[next_index]
-	var nt   = selected_techs[next_index]
+	var nt   = party[next_index]["techniques"][0]
 	var smap := {"circle": "円", "triangle": "三角", "star": "星"}
 	next_lbl.text = "NEXT → " + nch["emoji"] + " " + nt["name"] + "（" + smap.get(nt["shape"], nt["shape"]) + "）"
 
@@ -389,9 +400,8 @@ func _apply_guide_style() -> void:
 func _start_fio_shrink() -> void:
 	if fio_tween: fio_tween.kill()
 	fio_guide_r = TARGET_R
-	fio_tween = create_tween()
+	fio_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
 	fio_tween.tween_method(_on_fio_r_changed, TARGET_R, TARGET_R * 0.38, 8.5)
-	fio_tween.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
 
 func _on_fio_r_changed(r: float) -> void:
 	fio_guide_r = r
@@ -405,7 +415,13 @@ func _on_fio_r_changed(r: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _input(event: InputEvent) -> void:
-	if game_state == "pre_select" or game_state == "chaining" or game_state == "result":
+	if game_state == "result":
+		var tapped := (event is InputEventScreenTouch and event.pressed) or \
+		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
+		if tapped:
+			get_tree().reload_current_scene()
+		return
+	if game_state == "chaining" or game_state == "intro":
 		return
 
 	if event is InputEventScreenTouch:
@@ -485,7 +501,7 @@ func _add_point(pos: Vector2) -> void:
 	_update_trace_color()
 
 func _end_drawing() -> void:
-	if not (game_state == "drawing"): return
+	if game_state != "drawing": return
 	game_state = "drawn"
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec   += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
@@ -559,7 +575,7 @@ func _score_drawing() -> Dictionary:
 
 	if early_bonus > 1.0: damage = int(damage * early_bonus)
 	return {"rank": rank, "color": color, "damage": damage, "accuracy": acc,
-	        "char": character, "tech": selected_techs[party_index]}
+	        "char": character, "tech": party[party_index]["techniques"][0]}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ターン管理
@@ -588,19 +604,19 @@ func _process(_delta: float) -> void:
 	else:
 		timer_lbl.add_theme_color_override("font_color", Color.WHITE)
 
-	if rem <= 0.0 and game_state in ["drawing", "idle"]:
+	if rem <= 0.0 and game_state in ["drawing", "idle", "drawn"]:
 		_end_turn()
 
 func _end_turn() -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start = -1.0
+	if pending_timer: pending_timer = null
 	turn_active = false
 	timer_lbl.text = ""
-	# 描きかけがあればスコア
-	if game_state == "drawing" and trace_pts.size() > 5:
+	if game_state in ["drawing", "drawn"] and trace_pts.size() > 5:
 		var sc := _score_drawing()
-		sc["char"] = character; sc["tech"] = selected_techs[party_index]
+		sc["char"] = character; sc["tech"] = party[party_index]["techniques"][0]
 		stored_attacks.append(sc)
 		_update_combo_display()
 	trace_line.clear_points(); trace_pts = []
@@ -611,9 +627,10 @@ func _end_turn() -> void:
 	_blink_hint()
 
 func _blink_hint() -> void:
-	var tw = create_tween().set_loops()
-	tw.tween_property(hint_lbl, "modulate:a", 0.2, 0.4)
-	tw.tween_property(hint_lbl, "modulate:a", 1.0, 0.4)
+	if blink_tween: blink_tween.kill()
+	blink_tween = create_tween().set_loops()
+	blink_tween.tween_property(hint_lbl, "modulate:a", 0.2, 0.4)
+	blink_tween.tween_property(hint_lbl, "modulate:a", 1.0, 0.4)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # コンボ
@@ -626,7 +643,7 @@ func _store_combo(go_idle: bool = false) -> void:
 
 	if trace_pts.size() > 10:
 		var sc := _score_drawing()
-		var tech: Dictionary = selected_techs[party_index]
+		var tech: Dictionary = party[party_index]["techniques"][0]
 		sc["char"] = character; sc["tech"] = tech
 		# 時雷陣：タイマー延長
 		if tech["effect"] == "time" and sc["accuracy"] >= 55:
@@ -707,17 +724,26 @@ func _fire_next(idx: int) -> void:
 	var tech := atk.get("tech", {}) as Dictionary
 	var delay := 0.9 if atk.get("is_forbidden", false) else 0.45
 
-	# 回復技
-	if tech.get("effect") == "heal" and atk["accuracy"] >= 55:
-		var heal := int(tech.get("value", 30) * atk["accuracy"] / 100.0)
-		player_hp = mini(player_max_hp, player_hp + heal)
-		_update_player_hp_bar()
-		result_lbl.text = atk["rank"]
-		result_lbl.add_theme_color_override("font_color", atk["color"])
-		power_lbl.text = "+%d HP ✨" % heal
-		power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
-		get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
-		return
+	# FORBIDDEN はキャラ効果に関わらずダメージ扱い（ここで判断してスキップしない）
+	if not atk.get("is_forbidden", false):
+		# 回復技
+		if tech.get("effect") == "heal" and atk["accuracy"] >= 55:
+			var heal := int(tech.get("value", 30) * atk["accuracy"] / 100.0)
+			player_hp = mini(player_max_hp, player_hp + heal)
+			_update_player_hp_bar()
+			result_lbl.text = atk["rank"]
+			result_lbl.add_theme_color_override("font_color", atk["color"])
+			power_lbl.text = "+%d HP ✨" % heal
+			power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
+			get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
+			return
+		# 時間回復技（延長はstore_combo済み・ここではエフェクトのみ）
+		if tech.get("effect") == "time":
+			result_lbl.text = atk["rank"]
+			result_lbl.add_theme_color_override("font_color", atk["color"])
+			_show_float_text(tx, ty - TARGET_R - 20, "+TIME", Color(0.27, 0.67, 1.0), 36)
+			get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
+			return
 
 	# ダメージ技
 	result_lbl.text = atk["rank"]
@@ -743,13 +769,14 @@ func _boss_attack() -> void:
 
 func _advance_round() -> void:
 	_boss_attack()
+	if player_hp <= 0: return
 	if round_num >= max_rounds:
 		get_tree().create_timer(1.0).timeout.connect(_round_end)
 	else:
 		get_tree().create_timer(1.0).timeout.connect(func():
 			round_num += 1
 			round_lbl.text = "Round %d / %d" % [round_num, max_rounds]
-			_show_pre_select()
+			_start_round()
 		)
 
 func _update_boss_hp_bar() -> void:
@@ -770,12 +797,6 @@ func _boss_defeated() -> void:
 	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
 	power_lbl.text = "Tap to restart"
 	hint_lbl.text = ""
-	get_tree().create_timer(0.5).timeout.connect(func():
-		get_tree().process_frame.connect(func():
-			if Input.is_action_just_pressed("ui_accept") or _any_touch_pressed():
-				get_tree().reload_current_scene()
-		, CONNECT_ONE_SHOT)
-	)
 
 func _player_defeated() -> void:
 	game_state = "result"
@@ -783,9 +804,6 @@ func _player_defeated() -> void:
 	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.27, 0.27))
 	power_lbl.text = "Tap to retry"
 	hint_lbl.text = ""
-	get_tree().create_timer(1.0).timeout.connect(func():
-		get_tree().reload_current_scene()
-	)
 
 func _round_end() -> void:
 	game_state = "result"
@@ -793,12 +811,6 @@ func _round_end() -> void:
 	result_lbl.add_theme_color_override("font_color", Color(0.53, 0.53, 0.8))
 	power_lbl.text = "Boss HP: %d\nTap to retry" % boss_hp
 	hint_lbl.text = ""
-	get_tree().create_timer(1.0).timeout.connect(func():
-		get_tree().reload_current_scene()
-	)
-
-func _any_touch_pressed() -> bool:
-	return not active_touches.is_empty()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # エフェクト
