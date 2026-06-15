@@ -432,22 +432,19 @@ func _on_fio_r_changed(r: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _input(event: InputEvent) -> void:
+	var tapped := (event is InputEventScreenTouch and event.pressed) or \
+	              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
+
 	if game_state == "start":
-		var tapped := (event is InputEventScreenTouch and event.pressed) or \
-		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
 		if tapped:
 			game_state = "idle"
 			_on_start_tapped()
 		return
 	if game_state == "result":
-		var tapped := (event is InputEventScreenTouch and event.pressed) or \
-		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
 		if tapped:
 			get_tree().reload_current_scene()
 		return
 	if game_state == "intro":
-		var tapped := (event is InputEventScreenTouch and event.pressed) or \
-		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
 		if tapped:
 			_on_intro_start()
 		return
