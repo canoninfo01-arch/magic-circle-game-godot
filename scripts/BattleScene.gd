@@ -85,6 +85,9 @@ var party_slots    : Array = []   # [{bg, lbl}]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _ready() -> void:
+	# スタート画面はawait前に同期的に作る（await後のエラーに影響されないよう）
+	_show_start_screen()
+
 	await get_tree().process_frame
 	var sz  = get_viewport_rect().size
 	W = sz.x; H = sz.y
@@ -96,8 +99,6 @@ func _ready() -> void:
 	character      = party[party_index]
 	current_shape  = party[party_index]["techniques"][0]["shape"]
 	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
-
-	_show_start_screen()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # スタート画面（描画確認用・W/H非依存の固定サイズ）
