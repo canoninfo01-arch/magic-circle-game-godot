@@ -20,6 +20,7 @@ var tx: float; var ty: float   # target center
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var party          : Array = []
 var party_index    : int   = 0
+var start_layer    : CanvasLayer = null
 var intro_layer    : CanvasLayer = null
 var next_index     : int   = 0
 var character      : Dictionary = {}
@@ -96,13 +97,41 @@ func _ready() -> void:
 	current_shape  = party[party_index]["techniques"][0]["shape"]
 	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
 
+	_show_start_screen()
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# スタート画面（描画確認用・W/H非依存の固定サイズ）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+func _show_start_screen() -> void:
+	game_state = "start"
+	start_layer = CanvasLayer.new()
+	start_layer.layer = 1
+	add_child(start_layer)
+
+	var bg = ColorRect.new()
+	bg.color = Color(0.059, 0.059, 0.137)
+	bg.size = Vector2(1000, 2000)
+	start_layer.add_child(bg)
+
+	var lbl = Label.new()
+	lbl.text = "MAGIC CIRCLE\n\nタップしてスタート"
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	lbl.size = Vector2(500, 400)
+	lbl.position = Vector2(0, 150)
+	lbl.add_theme_font_size_override("font_size", 26)
+	lbl.add_theme_color_override("font_color", Color.WHITE)
+	start_layer.add_child(lbl)
+
+func _on_start_tapped() -> void:
+	start_layer.queue_free()
+	start_layer = null
 	_build_nodes()
 	_build_intro()
-
 	var jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
 		_apply_font(self, jp_font)
-
 	_show_intro()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -403,6 +432,13 @@ func _on_fio_r_changed(r: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func _input(event: InputEvent) -> void:
+	if game_state == "start":
+		var tapped := (event is InputEventScreenTouch and event.pressed) or \
+		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
+		if tapped:
+			game_state = "idle"
+			_on_start_tapped()
+		return
 	if game_state == "result":
 		var tapped := (event is InputEventScreenTouch and event.pressed) or \
 		              (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
