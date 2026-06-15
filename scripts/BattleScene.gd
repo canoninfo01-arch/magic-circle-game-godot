@@ -20,7 +20,7 @@ var tx: float; var ty: float   # target center
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var party          : Array = []
 var party_index    : int   = 0
-var intro_root     : Control = null
+var intro_layer    : CanvasLayer = null
 var next_index     : int   = 0
 var character      : Dictionary = {}
 
@@ -217,20 +217,17 @@ func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
 	return l
 
 func _build_intro() -> void:
-	intro_root = Control.new()
-	intro_root.size = Vector2(W, H)
-	intro_root.position = Vector2.ZERO
-	intro_root.visible = false
-	ui_layer.add_child(intro_root)
+	# ui_layer と同じ CanvasLayer 方式。Control 経由だとサイズが取れないため。
+	intro_layer = CanvasLayer.new()
+	intro_layer.layer = 2   # ui_layer(1) より上
+	intro_layer.visible = false
+	add_child(intro_layer)
 
-	# 背景
 	var bg = ColorRect.new()
-	bg.color = Color(0.04, 0.04, 0.10, 0.97)
+	bg.color = Color(0.04, 0.04, 0.10)
 	bg.size = Vector2(W, H)
-	bg.position = Vector2.ZERO
-	intro_root.add_child(bg)
+	intro_layer.add_child(bg)
 
-	# タイトル
 	var title = Label.new()
 	title.text = "パーティ紹介"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -238,35 +235,30 @@ func _build_intro() -> void:
 	title.position = Vector2(0, 20)
 	title.add_theme_font_size_override("font_size", 22)
 	title.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
-	intro_root.add_child(title)
+	intro_layer.add_child(title)
 
-	# キャラカード（縦に3枚）— すべて intro_root 直下に絶対座標で配置
 	var card_h  := 128.0
 	var card_gap := 12.0
 	var top_y   := 68.0
 	var smap    := {"circle": "円", "triangle": "三角", "star": "星"}
-	var all_chars := _Characters.get_all()
 
-	for i in range(all_chars.size()):
-		var ch   = all_chars[i]
+	for i in range(party.size()):
+		var ch   = party[i]
 		var tech = ch["techniques"][0]
 		var cy   := top_y + i * (card_h + card_gap)
 
-		# カード背景
 		var card_bg = ColorRect.new()
-		card_bg.color = Color(ch["color"].r * 0.22, ch["color"].g * 0.22, ch["color"].b * 0.22, 1.0)
+		card_bg.color = Color(ch["color"].r * 0.22, ch["color"].g * 0.22, ch["color"].b * 0.22)
 		card_bg.size = Vector2(W - 32, card_h)
 		card_bg.position = Vector2(16, cy)
-		intro_root.add_child(card_bg)
+		intro_layer.add_child(card_bg)
 
-		# 左側アクセントバー
 		var accent = ColorRect.new()
 		accent.color = ch["color"]
 		accent.size = Vector2(5, card_h)
 		accent.position = Vector2(16, cy)
-		intro_root.add_child(accent)
+		intro_layer.add_child(accent)
 
-		# 名前ラベル
 		var name_lbl = Label.new()
 		name_lbl.text = ch["emoji"] + "  " + ch["name"] + "  【" + ch["attr"] + "】"
 		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -274,9 +266,8 @@ func _build_intro() -> void:
 		name_lbl.position = Vector2(30, cy + 8)
 		name_lbl.add_theme_font_size_override("font_size", 18)
 		name_lbl.add_theme_color_override("font_color", ch["color"])
-		intro_root.add_child(name_lbl)
+		intro_layer.add_child(name_lbl)
 
-		# 技ラベル
 		var tname_lbl = Label.new()
 		tname_lbl.text = "技：" + tech["name"] + "（" + smap.get(tech["shape"], tech["shape"]) + "）"
 		tname_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -284,9 +275,8 @@ func _build_intro() -> void:
 		tname_lbl.position = Vector2(30, cy + 42)
 		tname_lbl.add_theme_font_size_override("font_size", 13)
 		tname_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.8))
-		intro_root.add_child(tname_lbl)
+		intro_layer.add_child(tname_lbl)
 
-		# 説明ラベル
 		var desc_lbl = Label.new()
 		desc_lbl.text = ch["desc"]
 		desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -294,10 +284,8 @@ func _build_intro() -> void:
 		desc_lbl.position = Vector2(30, cy + 68)
 		desc_lbl.add_theme_font_size_override("font_size", 11)
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
-		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		intro_root.add_child(desc_lbl)
+		intro_layer.add_child(desc_lbl)
 
-	# BATTLE STARTボタン
 	var btn = Button.new()
 	btn.text = "▶  BATTLE  START"
 	btn.size = Vector2(280, 52)
@@ -312,14 +300,14 @@ func _build_intro() -> void:
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_font_size_override("font_size", 18)
 	btn.pressed.connect(_on_intro_start)
-	intro_root.add_child(btn)
+	intro_layer.add_child(btn)
 
 func _show_intro() -> void:
 	game_state = "intro"
-	intro_root.visible = true
+	intro_layer.visible = true
 
 func _on_intro_start() -> void:
-	intro_root.visible = false
+	intro_layer.visible = false
 	_start_round()
 
 func _start_round() -> void:
