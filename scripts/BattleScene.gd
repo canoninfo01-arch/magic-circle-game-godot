@@ -126,6 +126,7 @@ func _show_start_screen() -> void:
 	start_layer.add_child(lbl)
 
 func _on_start_tapped() -> void:
+	if party.is_empty(): return   # await not yet complete; user tapped too fast
 	start_layer.queue_free()
 	start_layer = null
 	_build_nodes()
@@ -438,7 +439,6 @@ func _input(event: InputEvent) -> void:
 
 	if game_state == "start":
 		if tapped:
-			game_state = "idle"
 			_on_start_tapped()
 		return
 	if game_state == "result":
