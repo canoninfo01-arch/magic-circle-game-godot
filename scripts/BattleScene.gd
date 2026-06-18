@@ -2,6 +2,7 @@ extends Node2D
 
 const _Characters = preload("res://scripts/Characters.gd")
 const _Shapes     = preload("res://scripts/Shapes.gd")
+const _Cards      = preload("res://scripts/Cards.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
@@ -78,6 +79,13 @@ var hint_lbl       : Label;     var tech_lbl       : Label
 var next_lbl       : Label
 var party_slots    : Array = []   # [{bg, lbl}]
 
+# ドロップ画面
+var drop_layer     : CanvasLayer = null
+var drop_card_bg   : ColorRect   = null
+var drop_name_lbl  : Label       = null
+var drop_rarity_lbl: Label       = null
+var drop_tap_lbl   : Label       = null
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -98,6 +106,7 @@ func _ready() -> void:
 
 	_build_nodes()
 	_build_intro()
+	_build_drop_screen()
 
 	var jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
@@ -307,6 +316,64 @@ func _on_intro_start() -> void:
 	intro_layer.visible = false
 	_start_round()
 
+func _build_drop_screen() -> void:
+	drop_layer = CanvasLayer.new()
+	drop_layer.layer = 3
+	drop_layer.visible = false
+	add_child(drop_layer)
+
+	var overlay = ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.78)
+	overlay.size  = Vector2(W, H)
+	drop_layer.add_child(overlay)
+
+	var get_lbl = Label.new()
+	get_lbl.text = "CARD GET !!"
+	get_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	get_lbl.size     = Vector2(W, 48)
+	get_lbl.position = Vector2(0, H * 0.15)
+	get_lbl.add_theme_font_size_override("font_size", 30)
+	get_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
+	drop_layer.add_child(get_lbl)
+
+	drop_card_bg = ColorRect.new()
+	drop_card_bg.size     = Vector2(220, 290)
+	drop_card_bg.position = Vector2(W / 2.0 - 110, H * 0.28)
+	drop_layer.add_child(drop_card_bg)
+
+	drop_name_lbl = Label.new()
+	drop_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	drop_name_lbl.size     = Vector2(200, 120)
+	drop_name_lbl.position = Vector2(W / 2.0 - 100, H * 0.28 + 80)
+	drop_name_lbl.add_theme_font_size_override("font_size", 26)
+	drop_layer.add_child(drop_name_lbl)
+
+	drop_rarity_lbl = Label.new()
+	drop_rarity_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	drop_rarity_lbl.size     = Vector2(200, 40)
+	drop_rarity_lbl.position = Vector2(W / 2.0 - 100, H * 0.28 + 210)
+	drop_rarity_lbl.add_theme_font_size_override("font_size", 22)
+	drop_layer.add_child(drop_rarity_lbl)
+
+	drop_tap_lbl = Label.new()
+	drop_tap_lbl.text = "▶  タップして続ける"
+	drop_tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	drop_tap_lbl.size     = Vector2(W, 36)
+	drop_tap_lbl.position = Vector2(0, H - 72)
+	drop_tap_lbl.add_theme_font_size_override("font_size", 18)
+	drop_tap_lbl.add_theme_color_override("font_color", Color(0.5, 0.9, 1.0))
+	drop_layer.add_child(drop_tap_lbl)
+
+func _show_drop_screen(card: Dictionary) -> void:
+	var col : Color = card["color"]
+	drop_card_bg.color    = Color(col.r * 0.25, col.g * 0.25, col.b * 0.25)
+	drop_name_lbl.text    = card["name"]
+	drop_name_lbl.add_theme_color_override("font_color", col)
+	drop_rarity_lbl.text  = _Cards.rarity_label(card["rarity"])
+	drop_rarity_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
+	drop_layer.visible = true
+	game_state = "drop"
+
 func _start_round() -> void:
 	party_index   = randi() % party.size()
 	next_index    = randi() % party.size()
@@ -417,6 +484,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if game_state == "result":
 		if tapped:
+			get_tree().reload_current_scene()
+		return
+	if game_state == "drop":
+		if tapped:
+			drop_layer.visible = false
 			get_tree().reload_current_scene()
 		return
 
@@ -780,13 +852,11 @@ func _boss_defeated() -> void:
 	game_state = "result"
 	result_lbl.text = "BOSS DEFEATED!!"
 	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
-	power_lbl.text = "Tap to restart"
+	power_lbl.text = ""
 	hint_lbl.text = ""
-	get_tree().create_timer(0.5).timeout.connect(func():
-		get_tree().process_frame.connect(func():
-			if Input.is_action_just_pressed("ui_accept") or _any_touch_pressed():
-				get_tree().reload_current_scene()
-		, CONNECT_ONE_SHOT)
+	get_tree().create_timer(1.2).timeout.connect(func():
+		var card = _Cards.roll_drop()
+		_show_drop_screen(card)
 	)
 
 func _player_defeated() -> void:
