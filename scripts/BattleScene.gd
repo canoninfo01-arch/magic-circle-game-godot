@@ -240,8 +240,9 @@ func _build_intro() -> void:
 	add_child(intro_layer)
 
 	var bg = ColorRect.new()
-	bg.color = Color(0.04, 0.04, 0.12)
-	bg.size  = Vector2(W, H)
+	bg.color        = Color(0.04, 0.04, 0.12)
+	bg.size         = Vector2(W, H)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	intro_layer.add_child(bg)
 
 	var title_lbl = Label.new()
@@ -265,15 +266,17 @@ func _build_intro() -> void:
 		var col  : Color = ch["color"]
 
 		var card_bg = ColorRect.new()
-		card_bg.color    = Color(col.r * 0.22, col.g * 0.22, col.b * 0.22)
-		card_bg.size     = Vector2(W - 32, card_h)
-		card_bg.position = Vector2(16, cy)
+		card_bg.color        = Color(col.r * 0.22, col.g * 0.22, col.b * 0.22)
+		card_bg.size         = Vector2(W - 32, card_h)
+		card_bg.position     = Vector2(16, cy)
+		card_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		intro_layer.add_child(card_bg)
 
 		var accent = ColorRect.new()
-		accent.color    = col
-		accent.size     = Vector2(5, card_h)
-		accent.position = Vector2(16, cy)
+		accent.color        = col
+		accent.size         = Vector2(5, card_h)
+		accent.position     = Vector2(16, cy)
+		accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		intro_layer.add_child(accent)
 
 		var name_lbl = Label.new()
