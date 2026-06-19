@@ -306,9 +306,9 @@ func _build_intro() -> void:
 	var coll_btn = Label.new()
 	coll_btn.name = "CollBtn"
 	coll_btn.text = "📦 コレクション"
-	coll_btn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	coll_btn.size     = Vector2(W - 16, 32)
-	coll_btn.position = Vector2(0, H - 110)
+	coll_btn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	coll_btn.size     = Vector2(160, 40)
+	coll_btn.position = Vector2(W / 2.0 - 80, H - 116)
 	coll_btn.add_theme_font_size_override("font_size", 15)
 	coll_btn.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
 	intro_layer.add_child(coll_btn)
@@ -591,7 +591,8 @@ func _input(event: InputEvent) -> void:
 				touch_pos = event.position
 			elif event is InputEventMouseButton:
 				touch_pos = event.position
-			if touch_pos.y > H - 130 and touch_pos.y < H - 90:
+			var coll_rect = Rect2(W / 2.0 - 80, H - 116, 160, 40)
+			if coll_rect.has_point(touch_pos):
 				_open_collection()
 			else:
 				_on_intro_start()
