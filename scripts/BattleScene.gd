@@ -303,14 +303,22 @@ func _build_intro() -> void:
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
 		intro_layer.add_child(desc_lbl)
 
-	var coll_btn = Label.new()
+	var coll_btn = Button.new()
 	coll_btn.name = "CollBtn"
 	coll_btn.text = "📦 コレクション"
-	coll_btn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	coll_btn.size     = Vector2(160, 40)
-	coll_btn.position = Vector2(W / 2.0 - 80, H - 116)
+	coll_btn.size     = Vector2(200, 44)
+	coll_btn.position = Vector2(W / 2.0 - 100, H - 122)
 	coll_btn.add_theme_font_size_override("font_size", 15)
 	coll_btn.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+	var sbox = StyleBoxFlat.new()
+	sbox.bg_color = Color(0.08, 0.12, 0.22)
+	sbox.border_color = Color(0.4, 0.6, 1.0)
+	sbox.set_border_width_all(2)
+	sbox.set_corner_radius_all(8)
+	coll_btn.add_theme_stylebox_override("normal", sbox)
+	coll_btn.add_theme_stylebox_override("hover",  sbox)
+	coll_btn.add_theme_stylebox_override("pressed", sbox)
+	coll_btn.pressed.connect(_open_collection)
 	intro_layer.add_child(coll_btn)
 
 	var tap_lbl = Label.new()
@@ -574,6 +582,12 @@ func _on_fio_r_changed(r: float) -> void:
 # 入力
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+func _unhandled_input(event: InputEvent) -> void:
+	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
+	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
+	if game_state == "intro" and tapped:
+		_on_intro_start()
+
 func _input(event: InputEvent) -> void:
 	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
 	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
@@ -585,17 +599,6 @@ func _input(event: InputEvent) -> void:
 			_close_collection()
 		return
 	if game_state == "intro":
-		if tapped:
-			var touch_pos : Vector2 = Vector2.ZERO
-			if event is InputEventScreenTouch:
-				touch_pos = event.position
-			elif event is InputEventMouseButton:
-				touch_pos = event.position
-			var coll_rect = Rect2(W / 2.0 - 80, H - 116, 160, 40)
-			if coll_rect.has_point(touch_pos):
-				_open_collection()
-			else:
-				_on_intro_start()
 		return
 	if game_state == "result":
 		if tapped:
