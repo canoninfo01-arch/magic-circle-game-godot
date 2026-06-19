@@ -104,7 +104,7 @@ func _ready() -> void:
 	party_index    = randi() % party.size()
 	next_index     = randi() % party.size()
 	character      = party[party_index]
-	current_shape  = party[party_index]["techniques"][0]["shape"]
+	current_shape  = party[party_index]["techniques"][0]["shape"]  # _get_tech未初期化のため固定
 	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
 
 	_build_nodes()
@@ -472,10 +472,20 @@ func _refresh_collection() -> void:
 		rar_lbl.text = _Cards.rarity_label(card["rarity"]) if owned else "☆☆☆"
 		rar_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		rar_lbl.size     = Vector2(cell_w - 6, 24)
-		rar_lbl.position = Vector2(cx, cy + 52)
+		rar_lbl.position = Vector2(cx, cy + 50)
 		rar_lbl.add_theme_font_size_override("font_size", 12)
 		rar_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1) if owned else Color(0.3, 0.3, 0.3))
 		grid_root.add_child(rar_lbl)
+
+		if owned and GameData.get_equipped(card["char_id"]) == card["id"]:
+			var eq_lbl = Label.new()
+			eq_lbl.text = "▶装備中"
+			eq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			eq_lbl.size     = Vector2(cell_w - 6, 18)
+			eq_lbl.position = Vector2(cx, cy + 68)
+			eq_lbl.add_theme_font_size_override("font_size", 10)
+			eq_lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.5))
+			grid_root.add_child(eq_lbl)
 
 func _open_collection() -> void:
 	_refresh_collection()
@@ -483,6 +493,25 @@ func _open_collection() -> void:
 
 func _close_collection() -> void:
 	coll_layer.visible = false
+
+func _try_equip_at(tp: Vector2) -> void:
+	var cols_n  := 3
+	var cell_w  := (W - 16) / cols_n
+	var cell_h  := 90.0
+	var start_y := 62.0
+	var col_i   := int((tp.x - 8) / cell_w)
+	var row_i   := int((tp.y - start_y) / cell_h)
+	if col_i < 0 or col_i >= cols_n or row_i < 0: return
+	var idx  := row_i * cols_n + col_i
+	var all  := _Cards.get_all()
+	if idx >= all.size(): return
+	var card := all[idx]
+	if not GameData.has_card(card["id"]): return
+	if GameData.get_equipped(card["char_id"]) == card["id"]:
+		GameData.equip_card(card["char_id"], "")   # はずす
+	else:
+		GameData.equip_card(card["char_id"], card["id"])
+	_refresh_collection()
 
 func _start_round() -> void:
 	party_index   = randi() % party.size()
@@ -510,9 +539,18 @@ func _clear_display() -> void:
 # パーティ管理
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+func _get_tech(ch: Dictionary) -> Dictionary:
+	var eq_id = GameData.get_equipped(ch["id"])
+	if eq_id != "":
+		var tech_id = eq_id.left(eq_id.rfind("_"))
+		for tech in ch["techniques"]:
+			if tech["id"] == tech_id:
+				return tech
+	return ch["techniques"][0]
+
 func _update_current_char() -> void:
 	character     = party[party_index]
-	current_shape = party[party_index]["techniques"][0]["shape"]
+	current_shape = _get_tech(party[party_index])["shape"]
 	fio_guide_r   = TARGET_R
 	if fio_tween: fio_tween.kill(); fio_tween = null
 	sample_pts    = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
@@ -522,7 +560,7 @@ func _update_current_char() -> void:
 		_start_fio_shrink()
 	_update_party_display()
 	_update_next_display()
-	var tech = party[party_index]["techniques"][0]
+	var tech = _get_tech(party[party_index])
 	tech_lbl.text = character["emoji"] + " " + tech["name"]
 	tech_lbl.add_theme_color_override("font_color", character["color"])
 
@@ -538,7 +576,7 @@ func _update_party_display() -> void:
 
 func _update_next_display() -> void:
 	var nch  = party[next_index]
-	var nt   = party[next_index]["techniques"][0]
+	var nt   = _get_tech(party[next_index])
 	var smap := {"circle": "円", "triangle": "三角", "star": "星"}
 	next_lbl.text = "NEXT → " + nch["emoji"] + " " + nt["name"] + "（" + smap.get(nt["shape"], nt["shape"]) + "）"
 
@@ -596,7 +634,13 @@ func _input(event: InputEvent) -> void:
 		return
 	if coll_layer != null and coll_layer.visible:
 		if tapped:
-			_close_collection()
+			var tp := Vector2.ZERO
+			if event is InputEventScreenTouch:   tp = event.position
+			elif event is InputEventMouseButton: tp = event.position
+			if tp.y > H - 65:
+				_close_collection()
+			else:
+				_try_equip_at(tp)
 		return
 	if game_state == "intro":
 		return
