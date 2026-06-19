@@ -503,9 +503,9 @@ func _try_equip_at(tp: Vector2) -> void:
 	var row_i   := int((tp.y - start_y) / cell_h)
 	if col_i < 0 or col_i >= cols_n or row_i < 0: return
 	var idx  := row_i * cols_n + col_i
-	var all  := _Cards.get_all()
+	var all  : Array = _Cards.get_all()
 	if idx >= all.size(): return
-	var card := all[idx]
+	var card : Dictionary = all[idx]
 	if not GameData.has_card(card["id"]): return
 	if GameData.get_equipped(card["char_id"]) == card["id"]:
 		GameData.equip_card(card["char_id"], "")   # はずす
