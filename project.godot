@@ -28,6 +28,10 @@ window/stretch/aspect="keep"
 
 pointing/emulate_touch_from_mouse=true
 
+[autoload]
+
+GameData="*res://scripts/GameData.gd"
+
 [rendering]
 
 renderer/rendering_method="mobile"

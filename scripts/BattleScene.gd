@@ -86,6 +86,9 @@ var drop_name_lbl  : Label       = null
 var drop_rarity_lbl: Label       = null
 var drop_tap_lbl   : Label       = null
 
+# コレクション画面
+var coll_layer     : CanvasLayer = null
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -107,6 +110,7 @@ func _ready() -> void:
 	_build_nodes()
 	_build_intro()
 	_build_drop_screen()
+	_build_collection_screen()
 
 	var jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
@@ -299,6 +303,16 @@ func _build_intro() -> void:
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
 		intro_layer.add_child(desc_lbl)
 
+	var coll_btn = Label.new()
+	coll_btn.name = "CollBtn"
+	coll_btn.text = "📦 コレクション"
+	coll_btn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	coll_btn.size     = Vector2(W - 16, 32)
+	coll_btn.position = Vector2(0, H - 110)
+	coll_btn.add_theme_font_size_override("font_size", 15)
+	coll_btn.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+	intro_layer.add_child(coll_btn)
+
 	var tap_lbl = Label.new()
 	tap_lbl.text = "▶  タップしてスタート"
 	tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -365,6 +379,7 @@ func _build_drop_screen() -> void:
 	drop_layer.add_child(drop_tap_lbl)
 
 func _show_drop_screen(card: Dictionary) -> void:
+	GameData.add_card(card["id"])
 	var col : Color = card["color"]
 	drop_card_bg.color    = Color(col.r * 0.25, col.g * 0.25, col.b * 0.25)
 	drop_name_lbl.text    = card["name"]
@@ -373,6 +388,93 @@ func _show_drop_screen(card: Dictionary) -> void:
 	drop_rarity_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
 	drop_layer.visible = true
 	game_state = "drop"
+
+func _build_collection_screen() -> void:
+	coll_layer = CanvasLayer.new()
+	coll_layer.layer = 4
+	coll_layer.visible = false
+	add_child(coll_layer)
+
+	var bg = ColorRect.new()
+	bg.color = Color(0.04, 0.04, 0.10)
+	bg.size  = Vector2(W, H)
+	coll_layer.add_child(bg)
+
+	var title = Label.new()
+	title.name = "CollTitle"
+	title.text = "コレクション"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.size     = Vector2(W, 36)
+	title.position = Vector2(0, 16)
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
+	coll_layer.add_child(title)
+
+	var grid_root = Node2D.new()
+	grid_root.name = "GridRoot"
+	coll_layer.add_child(grid_root)
+
+	var back_lbl = Label.new()
+	back_lbl.text = "✕  閉じる"
+	back_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	back_lbl.size     = Vector2(W, 36)
+	back_lbl.position = Vector2(0, H - 60)
+	back_lbl.add_theme_font_size_override("font_size", 18)
+	back_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	coll_layer.add_child(back_lbl)
+
+func _refresh_collection() -> void:
+	if coll_layer == null: return
+	var grid_root = coll_layer.get_node("GridRoot")
+	for child in grid_root.get_children():
+		child.queue_free()
+
+	var all_cards = _Cards.get_all()
+	var cols      := 3
+	var cell_w    := (W - 16) / cols
+	var cell_h    := 90.0
+	var start_y   := 62.0
+
+	for i in range(all_cards.size()):
+		var card   = all_cards[i]
+		var col_i  = i % cols
+		var row_i  = i / cols
+		var cx     = 8 + col_i * cell_w
+		var cy     = start_y + row_i * cell_h
+		var owned  = GameData.has_card(card["id"])
+		var col : Color = card["color"] if owned else Color(0.2, 0.2, 0.22)
+
+		var cell_bg = ColorRect.new()
+		cell_bg.color    = Color(col.r * 0.2, col.g * 0.2, col.b * 0.2) if owned \
+		                   else Color(0.1, 0.1, 0.12)
+		cell_bg.size     = Vector2(cell_w - 6, cell_h - 6)
+		cell_bg.position = Vector2(cx, cy)
+		grid_root.add_child(cell_bg)
+
+		var name_lbl = Label.new()
+		name_lbl.text = card["name"] if owned else "？？？"
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.size     = Vector2(cell_w - 6, 36)
+		name_lbl.position = Vector2(cx, cy + 8)
+		name_lbl.add_theme_font_size_override("font_size", 14)
+		name_lbl.add_theme_color_override("font_color", col)
+		grid_root.add_child(name_lbl)
+
+		var rar_lbl = Label.new()
+		rar_lbl.text = _Cards.rarity_label(card["rarity"]) if owned else "☆☆☆"
+		rar_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		rar_lbl.size     = Vector2(cell_w - 6, 24)
+		rar_lbl.position = Vector2(cx, cy + 52)
+		rar_lbl.add_theme_font_size_override("font_size", 12)
+		rar_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1) if owned else Color(0.3, 0.3, 0.3))
+		grid_root.add_child(rar_lbl)
+
+func _open_collection() -> void:
+	_refresh_collection()
+	coll_layer.visible = true
+
+func _close_collection() -> void:
+	coll_layer.visible = false
 
 func _start_round() -> void:
 	party_index   = randi() % party.size()
@@ -478,9 +580,21 @@ func _input(event: InputEvent) -> void:
 
 	if game_state == "chaining":
 		return
+	if coll_layer != null and coll_layer.visible:
+		if tapped:
+			_close_collection()
+		return
 	if game_state == "intro":
 		if tapped:
-			_on_intro_start()
+			var touch_pos : Vector2 = Vector2.ZERO
+			if event is InputEventScreenTouch:
+				touch_pos = event.position
+			elif event is InputEventMouseButton:
+				touch_pos = event.position
+			if touch_pos.y > H - 130 and touch_pos.y < H - 90:
+				_open_collection()
+			else:
+				_on_intro_start()
 		return
 	if game_state == "result":
 		if tapped:
