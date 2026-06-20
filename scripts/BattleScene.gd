@@ -306,6 +306,29 @@ func _build_intro() -> void:
 		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
 		intro_layer.add_child(desc_lbl)
 
+	var tap_lbl = Label.new()
+	tap_lbl.text = "▶  タップしてスタート"
+	tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tap_lbl.size     = Vector2(W, 36)
+	tap_lbl.position = Vector2(0, H - 72)
+	tap_lbl.add_theme_font_size_override("font_size", 18)
+	tap_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	intro_layer.add_child(tap_lbl)
+
+	# 全画面スタートボタン（透明・最下層）
+	var start_btn = Button.new()
+	start_btn.flat     = true
+	start_btn.size     = Vector2(W, H)
+	start_btn.position = Vector2.ZERO
+	var empty = StyleBoxEmpty.new()
+	start_btn.add_theme_stylebox_override("normal",  empty)
+	start_btn.add_theme_stylebox_override("hover",   empty)
+	start_btn.add_theme_stylebox_override("pressed", empty)
+	start_btn.add_theme_stylebox_override("focus",   empty)
+	start_btn.pressed.connect(_on_intro_start)
+	intro_layer.add_child(start_btn)
+
+	# コレクションボタン（上に重ねて優先取得）
 	var coll_btn = Button.new()
 	coll_btn.name = "CollBtn"
 	coll_btn.text = "📦 コレクション"
@@ -318,20 +341,11 @@ func _build_intro() -> void:
 	sbox.border_color = Color(0.4, 0.6, 1.0)
 	sbox.set_border_width_all(2)
 	sbox.set_corner_radius_all(8)
-	coll_btn.add_theme_stylebox_override("normal", sbox)
-	coll_btn.add_theme_stylebox_override("hover",  sbox)
+	coll_btn.add_theme_stylebox_override("normal",  sbox)
+	coll_btn.add_theme_stylebox_override("hover",   sbox)
 	coll_btn.add_theme_stylebox_override("pressed", sbox)
 	coll_btn.pressed.connect(_open_collection)
 	intro_layer.add_child(coll_btn)
-
-	var tap_lbl = Label.new()
-	tap_lbl.text = "▶  タップしてスタート"
-	tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tap_lbl.size     = Vector2(W, 36)
-	tap_lbl.position = Vector2(0, H - 72)
-	tap_lbl.add_theme_font_size_override("font_size", 18)
-	tap_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
-	intro_layer.add_child(tap_lbl)
 
 func _show_intro() -> void:
 	game_state = "intro"
@@ -623,12 +637,6 @@ func _on_fio_r_changed(r: float) -> void:
 # 入力
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-func _unhandled_input(event: InputEvent) -> void:
-	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
-	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
-	if game_state == "intro" and tapped:
-		_on_intro_start()
-
 func _input(event: InputEvent) -> void:
 	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
 	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
@@ -646,7 +654,7 @@ func _input(event: InputEvent) -> void:
 				_try_equip_at(tp)
 		return
 	if game_state == "intro":
-		return
+		return  # Buttonが処理するので_inputでは何もしない
 	if game_state == "result":
 		if tapped:
 			get_tree().reload_current_scene()
