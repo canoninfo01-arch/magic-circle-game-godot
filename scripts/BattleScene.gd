@@ -60,7 +60,6 @@ var trace_pts      : Array[Vector2] = []
 var draw_start_sec : float  = 0.0
 var round_start_sec: float  = 0.0   # アギの早描きボーナス用
 var active_touches : Dictionary = {}
-var pending_timer  : SceneTreeTimer = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ノード参照
@@ -414,6 +413,7 @@ func _show_drop_screen(card: Dictionary) -> void:
 	drop_rarity_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
 	drop_layer.visible = true
 	game_state = "drop"
+	Sfx.play_card_get()
 
 func _build_collection_screen() -> void:
 	coll_layer = CanvasLayer.new()
@@ -705,14 +705,13 @@ func _on_single_touch(pos: Vector2) -> void:
 		"drawing":
 			pass   # ドラッグは InputEventScreenDrag で処理
 		"drawn":
-			pass   # 2本指タップ(_on_two_finger)で確定する
+			_resume_drawing(pos)   # 一筆書き制約なし：置き直して続きをなぞれる
 
 func _on_two_finger() -> void:
 	match game_state:
 		"drawing":
 			_store_combo()
 		"drawn":
-			if pending_timer: pending_timer = null
 			_store_combo(true)   # 指を離してから確定→idle経由で次の描画へ
 		"final_tap":
 			_fire_chain()
@@ -742,6 +741,14 @@ func _start_drawing(pos: Vector2) -> void:
 	if character["id"] == "fio" and fio_freeze_start < 0.0:
 		fio_freeze_start = Time.get_ticks_msec() / 1000.0
 
+func _resume_drawing(pos: Vector2) -> void:
+	game_state = "drawing"
+	trace_pts.append(pos)
+	trace_line.add_point(pos)
+	_update_trace_color()
+	if character["id"] == "fio" and fio_freeze_start < 0.0:
+		fio_freeze_start = Time.get_ticks_msec() / 1000.0
+
 func _add_point(pos: Vector2) -> void:
 	trace_pts.append(pos)
 	trace_line.add_point(pos)
@@ -753,11 +760,6 @@ func _end_drawing() -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec   += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start  = -1.0
-	pending_timer = get_tree().create_timer(2.0)
-	pending_timer.timeout.connect(func():
-		pending_timer = null
-		if game_state == "drawn": game_state = "idle"
-	)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # スコアリング
@@ -851,7 +853,7 @@ func _process(_delta: float) -> void:
 	else:
 		timer_lbl.add_theme_color_override("font_color", Color.WHITE)
 
-	if rem <= 0.0 and game_state in ["drawing", "idle"]:
+	if rem <= 0.0 and game_state in ["drawing", "idle", "drawn"]:
 		_end_turn()
 
 func _end_turn() -> void:
@@ -860,8 +862,8 @@ func _end_turn() -> void:
 		fio_freeze_start = -1.0
 	turn_active = false
 	timer_lbl.text = ""
-	# 描きかけがあればスコア
-	if game_state == "drawing" and trace_pts.size() > 5:
+	# 描きかけ・置き直し待ち中のトレースがあればスコア
+	if game_state in ["drawing", "drawn"] and trace_pts.size() > 5:
 		var sc := _score_drawing()
 		sc["char"] = character; sc["tech"] = party[party_index]["techniques"][0]
 		stored_attacks.append(sc)
@@ -988,6 +990,7 @@ func _fire_next(idx: int) -> void:
 	_show_float_text(tx, ty - TARGET_R - 20, "-%d" % atk["damage"], Color(1.0, 0.87, 0.0), 48)
 	boss_hp = maxi(0, boss_hp - atk["damage"])
 	_update_boss_hp_bar()
+	Sfx.play_hit()
 	_camera_shake(10.0 if atk.get("is_forbidden") else 5.0, 0.3)
 	_boss_flinch()
 	get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
