@@ -683,8 +683,11 @@ func _input(event: InputEvent) -> void:
 			if active_touches.is_empty() and game_state == "drawing":
 				_end_drawing()
 	elif event is InputEventScreenDrag:
-		if event.index == 0 and game_state == "drawing":
-			_add_point(event.position)
+		if event.index == 0:
+			if game_state == "drawing":
+				_add_point(event.position)
+			elif game_state == "drawn":
+				_resume_drawing(event.position)
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
@@ -695,8 +698,11 @@ func _input(event: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			_on_two_finger()   # PC での2本指シミュレーション
 	elif event is InputEventMouseMotion:
-		if not active_touches.is_empty() and game_state == "drawing":
-			_add_point(event.position)
+		if not active_touches.is_empty():
+			if game_state == "drawing":
+				_add_point(event.position)
+			elif game_state == "drawn":
+				_resume_drawing(event.position)
 
 func _on_single_touch(pos: Vector2) -> void:
 	match game_state:
@@ -705,7 +711,8 @@ func _on_single_touch(pos: Vector2) -> void:
 		"drawing":
 			pass   # ドラッグは InputEventScreenDrag で処理
 		"drawn":
-			_resume_drawing(pos)   # 一筆書き制約なし：置き直して続きをなぞれる
+			pass   # タッチダウン直後は2本指タップ確定との区別がつかないため、
+			       # ドラッグ(InputEventScreenDrag)が来てから_resume_drawing()する
 
 func _on_two_finger() -> void:
 	match game_state:
