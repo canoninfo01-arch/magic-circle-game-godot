@@ -15,6 +15,7 @@ const TURN_TIME   := 10.0   # seconds
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var W: float; var H: float
 var tx: float; var ty: float   # target center
+var jp_font: Font = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # パーティ
@@ -112,7 +113,7 @@ func _ready() -> void:
 	_build_drop_screen()
 	_build_collection_screen()
 
-	var jp_font = load("res://fonts/jp_font.ttf")
+	jp_font = load("res://fonts/jp_font.ttf")
 	if jp_font:
 		_apply_font(self, jp_font)
 
@@ -503,6 +504,9 @@ func _refresh_collection() -> void:
 			eq_lbl.add_theme_font_size_override("font_size", 10)
 			eq_lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.5))
 			grid_root.add_child(eq_lbl)
+
+	if jp_font:
+		_apply_font(grid_root, jp_font)
 
 func _open_collection() -> void:
 	_refresh_collection()
