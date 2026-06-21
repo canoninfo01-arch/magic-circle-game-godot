@@ -424,6 +424,7 @@ func _build_collection_screen() -> void:
 	var bg = ColorRect.new()
 	bg.color = Color(0.04, 0.04, 0.10)
 	bg.size  = Vector2(W, H)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	coll_layer.add_child(bg)
 
 	var title = Label.new()
@@ -475,6 +476,7 @@ func _refresh_collection() -> void:
 		                   else Color(0.1, 0.1, 0.12)
 		cell_bg.size     = Vector2(cell_w - 6, cell_h - 6)
 		cell_bg.position = Vector2(cx, cy)
+		cell_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		grid_root.add_child(cell_bg)
 
 		var name_lbl = Label.new()
