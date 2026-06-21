@@ -650,10 +650,10 @@ func _input(event: InputEvent) -> void:
 	if game_state == "chaining":
 		return
 	if coll_layer != null and coll_layer.visible:
-		if tapped:
-			var tp := Vector2.ZERO
-			if event is InputEventScreenTouch:   tp = event.position
-			elif event is InputEventMouseButton: tp = event.position
+		# emulate_touch_from_mouseでMouseButtonとScreenTouchが二重発火するため
+		# ScreenTouchのみを採用し、トグル操作が1タップで2回走るのを防ぐ
+		if event is InputEventScreenTouch and event.pressed:
+			var tp : Vector2 = event.position
 			if tp.y > H - 65:
 				_close_collection()
 			else:
