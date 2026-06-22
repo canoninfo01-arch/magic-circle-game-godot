@@ -8,7 +8,11 @@ const _Cards      = preload("res://scripts/Cards.gd")
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const TARGET_R    := 140.0
-const TURN_TIME   := 10.0   # seconds
+const MANA_MAX           := 100.0
+const MANA_COST          := 30.0
+const MANA_REGEN_PER_SEC := 6.0
+const MAX_WAVES   := 3
+const WAVE_TIME    := 20.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 画面
@@ -23,29 +27,30 @@ var jp_font: Font = null
 var party          : Array = []
 var party_index    : int   = 0
 var intro_layer    : CanvasLayer = null
-var next_index     : int   = 0
 var character      : Dictionary = {}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # バトル状態
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var game_state    : String = "idle"
-var boss_max_hp   : int    = 1000
-var boss_hp       : int    = 1000
 var player_max_hp : int    = 300
 var player_hp     : int    = 300
-var round_num     : int    = 1
-var max_rounds    : int    = 3
+var wave_num      : int    = 1
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ターン
+# 魔素（マナ）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var turn_active      : bool  = false
-var turn_time_limit  : float = TURN_TIME
-var turn_start_sec   : float = 0.0
+var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ウェーブ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var enemy_queue      : Array[Dictionary] = []
+var wave_active      : bool  = false
+var wave_time_limit  : float = WAVE_TIME
+var wave_start_sec   : float = 0.0
 var fio_frozen_sec   : float = 0.0
 var fio_freeze_start : float = -1.0
-var stored_attacks   : Array = []
 var current_shape    : String = "circle"
 var sample_pts       : Array[Vector2] = []
 var fio_guide_r      : float = TARGET_R
@@ -70,14 +75,14 @@ var guide_line     : Line2D
 var trace_line     : Line2D
 var ui_layer       : CanvasLayer
 
-var boss_hp_fill   : ColorRect; var boss_hp_lbl    : Label
-var boss_name_lbl  : Label;     var round_lbl      : Label
+var enemy_hp_fill  : ColorRect; var enemy_hp_lbl   : Label
+var enemy_name_lbl : Label;     var wave_lbl       : Label
 var player_hp_fill : ColorRect; var player_hp_lbl  : Label
-var timer_lbl      : Label;     var combo_lbl      : Label
+var timer_lbl      : Label;     var tech_lbl       : Label
 var result_lbl     : Label;     var power_lbl      : Label
-var hint_lbl       : Label;     var tech_lbl       : Label
-var next_lbl       : Label
-var party_slots    : Array = []   # [{bg, lbl}]
+var hint_lbl       : Label
+var element_btns   : Dictionary = {}   # element -> Button
+var mana_fills     : Dictionary = {}   # element -> ColorRect
 
 # ドロップ画面
 var drop_layer     : CanvasLayer = null
@@ -102,8 +107,7 @@ func _ready() -> void:
 	tx = W / 2.0; ty = H / 2.0 + 15.0
 
 	party          = _Characters.get_all()
-	party_index    = randi() % party.size()
-	next_index     = randi() % party.size()
+	party_index    = 0
 	character      = party[party_index]
 	current_shape  = party[party_index]["techniques"][0]["shape"]  # _get_tech未初期化のため固定
 	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
@@ -167,34 +171,61 @@ func _make_line(w: float, col: Color) -> Line2D:
 	l.joint_mode = Line2D.LINE_JOINT_ROUND
 	return l
 
+func _char_for_element(el: String) -> Dictionary:
+	for ch in party:
+		if ch["element"] == el:
+			return ch
+	return party[0]
+
 func _build_top_ui() -> void:
 	# ヘッダー
 	_lbl(W/2, 18,  "MAGIC CIRCLE", 14, Color(0.53, 0.53, 0.8)).set_h_size_flags(Control.SIZE_SHRINK_CENTER)
-	boss_name_lbl = _lbl(W/2, 38, "Dark Dragon", 18, Color(1.0, 0.67, 0.27))
+	enemy_name_lbl = _lbl(W/2, 38, "", 18, Color(1.0, 0.67, 0.27))
 
-	# ボスHPバー
-	var bp_bg = ColorRect.new()
-	bp_bg.color = Color(0.196, 0.196, 0.196); bp_bg.size = Vector2(W-24, 14)
-	bp_bg.position = Vector2(12, 52); ui_layer.add_child(bp_bg)
-	boss_hp_fill = ColorRect.new()
-	boss_hp_fill.color = Color(0.914, 0.271, 0.376); boss_hp_fill.size = Vector2(W-24, 14)
-	boss_hp_fill.position = Vector2(12, 52); ui_layer.add_child(boss_hp_fill)
-	boss_hp_lbl = _lbl(W/2, 59, "", 10, Color.WHITE)
+	# 敵HPバー
+	var ep_bg = ColorRect.new()
+	ep_bg.color = Color(0.196, 0.196, 0.196); ep_bg.size = Vector2(W-24, 14)
+	ep_bg.position = Vector2(12, 52); ui_layer.add_child(ep_bg)
+	enemy_hp_fill = ColorRect.new()
+	enemy_hp_fill.color = Color(0.67, 0.4, 0.85); enemy_hp_fill.size = Vector2(W-24, 14)
+	enemy_hp_fill.position = Vector2(12, 52); ui_layer.add_child(enemy_hp_fill)
+	enemy_hp_lbl = _lbl(W/2, 59, "", 10, Color.WHITE)
 
-	round_lbl = _lbl(W/2, 76, "Round 1 / 3", 13, Color(0.53, 0.53, 0.8))
+	wave_lbl = _lbl(W/2, 76, "WAVE 1 / %d" % MAX_WAVES, 13, Color(0.53, 0.53, 0.8))
 
-	# パーティスロット（3つ）
+	# 属性選択ボタン（3つ）＋魔素ゲージ
 	var slot_w := (W - 20.0) / 3.0
+	var elements : Array[String] = ["fire", "thunder", "ice"]
 	for i in range(3):
-		var sx := 10.0 + slot_w * i
-		var bg = ColorRect.new()
-		bg.color = Color(0.133, 0.133, 0.267); bg.size = Vector2(slot_w - 4, 22)
-		bg.position = Vector2(sx, 90); ui_layer.add_child(bg)
-		var lbl = _lbl(sx + (slot_w-4)/2, 101, "", 11, Color.WHITE)
-		party_slots.append({"bg": bg, "lbl": lbl})
+		var el : String = elements[i]
+		var ch  := _char_for_element(el)
+		var sx  := 10.0 + slot_w * i
 
-	tech_lbl = _lbl(W/2, 120, "", 12, Color(0.67, 0.67, 0.8))
-	next_lbl = _lbl(W/2, 136, "", 10, Color(0.27, 0.35, 0.45))
+		var btn := Button.new()
+		btn.text     = ch["emoji"] + " " + ch["name"]
+		btn.size     = Vector2(slot_w - 4, 26)
+		btn.position = Vector2(sx, 90)
+		btn.add_theme_font_size_override("font_size", 12)
+		var sbox := StyleBoxFlat.new()
+		sbox.bg_color = Color(ch["color"].r * 0.25, ch["color"].g * 0.25, ch["color"].b * 0.25)
+		sbox.set_corner_radius_all(6)
+		btn.add_theme_stylebox_override("normal",  sbox)
+		btn.add_theme_stylebox_override("hover",   sbox)
+		btn.add_theme_stylebox_override("pressed", sbox)
+		btn.add_theme_color_override("font_color", ch["color"])
+		btn.pressed.connect(_on_element_chosen.bind(el))
+		ui_layer.add_child(btn)
+		element_btns[el] = btn
+
+		var mp_bg := ColorRect.new()
+		mp_bg.color = Color(0.15, 0.15, 0.18); mp_bg.size = Vector2(slot_w - 4, 6)
+		mp_bg.position = Vector2(sx, 119); ui_layer.add_child(mp_bg)
+		var mp_fill := ColorRect.new()
+		mp_fill.color = ch["color"]; mp_fill.size = Vector2(slot_w - 4, 6)
+		mp_fill.position = Vector2(sx, 119); ui_layer.add_child(mp_fill)
+		mana_fills[el] = mp_fill
+
+	tech_lbl = _lbl(W/2, 136, "", 12, Color(0.67, 0.67, 0.8))
 
 func _build_bottom_ui() -> void:
 	result_lbl = _lbl(W/2, H-128, "", 28, Color.WHITE)
@@ -202,8 +233,6 @@ func _build_bottom_ui() -> void:
 	hint_lbl   = _lbl(W/2, H-52,  "Fill the shape!!", 13, Color(0.4, 0.4, 0.55))
 	timer_lbl  = _lbl(W-16, H-52, "", 20, Color.WHITE)
 	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	combo_lbl  = _lbl(16, H-52,   "", 15, Color(1.0, 0.67, 0.27))
-	combo_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	# プレイヤーHPバー
 	_lbl(16, H-18, "YOU", 10, Color(0.53, 0.67, 1.0)).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -215,7 +244,6 @@ func _build_bottom_ui() -> void:
 	player_hp_fill.position = Vector2(42, H-25); ui_layer.add_child(player_hp_fill)
 	player_hp_lbl = _lbl(42 + (W-70)/2, H-18, "", 10, Color.WHITE)
 
-	_update_boss_hp_bar()
 	_update_player_hp_bar()
 
 func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
@@ -354,7 +382,8 @@ func _show_intro() -> void:
 
 func _on_intro_start() -> void:
 	intro_layer.visible = false
-	_start_round()
+	wave_num = 1
+	_start_wave()
 
 func _build_drop_screen() -> void:
 	drop_layer = CanvasLayer.new()
@@ -615,27 +644,38 @@ func _try_equip_at(tp: Vector2) -> void:
 		GameData.equip_card(card["char_id"], card["id"])
 	_refresh_collection()
 
-func _start_round() -> void:
-	party_index   = randi() % party.size()
-	next_index    = randi() % party.size()
-	turn_active   = false
-	turn_time_limit = TURN_TIME
+func _generate_wave(n: int) -> Array[Dictionary]:
+	var count := 2 + n
+	var hp    := 40 + n * 15
+	var enemies : Array[Dictionary] = []
+	for i in range(count):
+		enemies.append({"hp": hp, "max_hp": hp})
+	return enemies
+
+func _start_wave() -> void:
+	enemy_queue   = _generate_wave(wave_num)
+	mana          = {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
+	wave_time_limit = WAVE_TIME
+	wave_start_sec  = Time.get_ticks_msec() / 1000.0
+	wave_active     = true
 	fio_frozen_sec  = 0.0; fio_freeze_start = -1.0
-	stored_attacks  = []
 	trace_pts       = []
 	active_touches.clear()
 	if fio_tween:   fio_tween.kill();   fio_tween = null
 	if guide_tween: guide_tween.kill(); guide_tween = null
 	fio_guide_r = TARGET_R
 	_clear_display()
+	wave_lbl.text = "WAVE %d / %d" % [wave_num, MAX_WAVES]
 	game_state = "idle"
-	_update_current_char()
+	_update_enemy_ui()
+	_update_mana_ui()
+	_on_element_chosen(character.get("element", "fire"))
 
 func _clear_display() -> void:
 	trace_line.clear_points()
 	result_lbl.text = ""; power_lbl.text = ""
 	hint_lbl.text = "Fill the shape!!"; hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
-	timer_lbl.text = ""; combo_lbl.text = ""
+	timer_lbl.text = ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # パーティ管理
@@ -658,29 +698,47 @@ func _update_current_char() -> void:
 	sample_pts    = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
 	_redraw_guide()
 	_apply_guide_style()
-	if character["id"] == "fio" and turn_active:
+	if character["id"] == "fio" and wave_active:
 		_start_fio_shrink()
-	_update_party_display()
-	_update_next_display()
+	_update_element_buttons()
 	var tech = _get_tech(party[party_index])
 	tech_lbl.text = character["emoji"] + " " + tech["name"]
 	tech_lbl.add_theme_color_override("font_color", character["color"])
 
-func _update_party_display() -> void:
+func _on_element_chosen(el: String) -> void:
+	if game_state != "idle": return
+	if mana.get(el, 0.0) < MANA_COST: return
 	for i in range(party.size()):
-		var slot = party_slots[i]
-		var ch   = party[i]
-		var cur  := i == party_index
-		slot["bg"].color = ch["color"] if cur else Color(0.133, 0.133, 0.267)
-		slot["lbl"].text = ch["emoji"] + " " + ch["name"]
-		slot["lbl"].add_theme_font_size_override("font_size", 11 if cur else 9)
-		slot["lbl"].add_theme_color_override("font_color", Color.WHITE if cur else ch["color"])
+		if party[i]["element"] == el:
+			party_index = i
+			break
+	_update_current_char()
 
-func _update_next_display() -> void:
-	var nch  = party[next_index]
-	var nt   = _get_tech(party[next_index])
-	var smap := {"circle": "円", "triangle": "三角", "star": "星"}
-	next_lbl.text = "NEXT → " + nch["emoji"] + " " + nt["name"] + "（" + smap.get(nt["shape"], nt["shape"]) + "）"
+func _update_element_buttons() -> void:
+	for el in element_btns.keys():
+		var btn  : Button     = element_btns[el]
+		var ch   := _char_for_element(el)
+		var cur  : bool = character.get("element", "") == el
+		btn.disabled = float(mana.get(el, 0.0)) < MANA_COST
+		var sbox := StyleBoxFlat.new()
+		var base_a := 0.45 if cur else 0.25
+		sbox.bg_color = Color(ch["color"].r * base_a, ch["color"].g * base_a, ch["color"].b * base_a) \
+			if not btn.disabled else Color(0.12, 0.12, 0.14)
+		sbox.set_corner_radius_all(6)
+		if cur:
+			sbox.set_border_width_all(2)
+			sbox.border_color = ch["color"]
+		btn.add_theme_stylebox_override("normal",  sbox)
+		btn.add_theme_stylebox_override("hover",   sbox)
+		btn.add_theme_stylebox_override("pressed", sbox)
+		btn.add_theme_stylebox_override("disabled", sbox)
+
+func _update_mana_ui() -> void:
+	var slot_w := (W - 20.0) / 3.0
+	for el in mana_fills.keys():
+		var fill : ColorRect = mana_fills[el]
+		fill.size.x = (slot_w - 4) * clampf(mana[el] / MANA_MAX, 0.0, 1.0)
+	_update_element_buttons()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ガイド描画・キャラ固有能力
@@ -726,7 +784,7 @@ func _input(event: InputEvent) -> void:
 	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
 	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
 
-	if game_state == "chaining":
+	if game_state == "wave_break":
 		return
 	if coll_layer != null and coll_layer.visible:
 		# emulate_touch_from_mouseでMouseButtonとScreenTouchが二重発火するため
@@ -783,9 +841,17 @@ func _input(event: InputEvent) -> void:
 			elif game_state == "drawn":
 				_resume_drawing(event.position)
 
+func _pos_over_element_btn(pos: Vector2) -> bool:
+	for el in element_btns.keys():
+		var btn : Button = element_btns[el]
+		if Rect2(btn.position, btn.size).has_point(pos):
+			return true
+	return false
+
 func _on_single_touch(pos: Vector2) -> void:
 	match game_state:
 		"idle":
+			if _pos_over_element_btn(pos): return
 			_start_drawing(pos)
 		"drawing":
 			pass   # ドラッグは InputEventScreenDrag で処理
@@ -795,12 +861,8 @@ func _on_single_touch(pos: Vector2) -> void:
 
 func _on_two_finger() -> void:
 	match game_state:
-		"drawing":
-			_store_combo()
-		"drawn":
-			_store_combo(true)   # 指を離してから確定→idle経由で次の描画へ
-		"final_tap":
-			_fire_chain()
+		"drawing", "drawn":
+			_resolve_cast()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画
@@ -815,10 +877,8 @@ func _start_drawing(pos: Vector2) -> void:
 	hint_lbl.text = ""
 	result_lbl.text = ""
 
-	if not turn_active:
-		_start_turn()
-		if character["id"] == "fio":
-			_start_fio_shrink()
+	if character["id"] == "fio":
+		_start_fio_shrink()
 
 	# サンプル点をフィオの現在半径でスナップ
 	var r := fio_guide_r if character["id"] == "fio" else TARGET_R
@@ -910,26 +970,25 @@ func _score_drawing() -> Dictionary:
 
 	if early_bonus > 1.0: damage = int(damage * early_bonus)
 	return {"rank": rank, "color": color, "damage": damage, "accuracy": acc,
-	        "char": character, "tech": party[party_index]["techniques"][0]}
+	        "char": character, "tech": _get_tech(character)}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ターン管理
+# ウェーブ・魔素タイマー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-func _start_turn() -> void:
-	turn_active    = true
-	turn_time_limit = TURN_TIME
-	turn_start_sec = Time.get_ticks_msec() / 1000.0
-	fio_frozen_sec = 0.0; fio_freeze_start = -1.0
-
-func _get_remaining() -> float:
-	if not turn_active: return 0.0
+func _get_wave_remaining() -> float:
+	if not wave_active: return 0.0
 	var frozen := fio_frozen_sec + (Time.get_ticks_msec() / 1000.0 - fio_freeze_start if fio_freeze_start >= 0.0 else 0.0)
-	return maxf(0.0, turn_time_limit - (Time.get_ticks_msec() / 1000.0 - turn_start_sec) + frozen)
+	return maxf(0.0, wave_time_limit - (Time.get_ticks_msec() / 1000.0 - wave_start_sec) + frozen)
 
-func _process(_delta: float) -> void:
-	if not turn_active: return
-	var rem := _get_remaining()
+func _process(delta: float) -> void:
+	if not wave_active: return
+
+	for el in mana.keys():
+		mana[el] = minf(MANA_MAX, mana[el] + MANA_REGEN_PER_SEC * delta)
+	_update_mana_ui()
+
+	var rem := _get_wave_remaining()
 	var frozen = character["id"] == "fio" and fio_freeze_start >= 0.0
 	timer_lbl.text = "%.1fs" % rem
 	if frozen:
@@ -940,175 +999,117 @@ func _process(_delta: float) -> void:
 		timer_lbl.add_theme_color_override("font_color", Color.WHITE)
 
 	if rem <= 0.0 and game_state in ["drawing", "idle", "drawn"]:
-		_end_turn()
+		_wave_timeout()
 
-func _end_turn() -> void:
+func _wave_timeout() -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start = -1.0
-	turn_active = false
+	wave_active = false
 	timer_lbl.text = ""
-	# 描きかけ・置き直し待ち中のトレースがあればスコア
-	if game_state in ["drawing", "drawn"] and trace_pts.size() > 5:
-		var sc := _score_drawing()
-		sc["char"] = character; sc["tech"] = party[party_index]["techniques"][0]
-		stored_attacks.append(sc)
-		_update_combo_display()
 	trace_line.clear_points(); trace_pts = []
 	result_lbl.text = ""
-	game_state = "final_tap"
-	hint_lbl.text = "FINAL TAP !!"
+
+	var remaining := enemy_queue.size()
+	if remaining > 0:
+		var dmg := remaining * 15
+		player_hp = maxi(0, player_hp - dmg)
+		_update_player_hp_bar()
+		_show_float_text(W / 2.0, H - 60, "-%d" % dmg, Color(1.0, 0.27, 0.27), 36)
+
+	if player_hp <= 0:
+		get_tree().create_timer(0.8).timeout.connect(_player_defeated)
+		return
+
+	game_state = "wave_break"
+	hint_lbl.text = "WAVE OVER..."
 	hint_lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.27))
-	_blink_hint()
-
-func _blink_hint() -> void:
-	var tw = create_tween().set_loops()
-	tw.tween_property(hint_lbl, "modulate:a", 0.2, 0.4)
-	tw.tween_property(hint_lbl, "modulate:a", 1.0, 0.4)
+	get_tree().create_timer(1.4).timeout.connect(func():
+		if wave_num >= MAX_WAVES:
+			_run_complete()
+		else:
+			wave_num += 1
+			_start_wave()
+	)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# コンボ
+# 発動・敵
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-func _store_combo(go_idle: bool = false) -> void:
+func _resolve_cast() -> void:
 	if character["id"] == "fio" and fio_freeze_start >= 0.0:
 		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
 		fio_freeze_start = -1.0
 
-	if trace_pts.size() > 10:
-		var sc := _score_drawing()
-		var tech: Dictionary = party[party_index]["techniques"][0]
-		sc["char"] = character; sc["tech"] = tech
-		# 時雷陣：タイマー延長
-		if tech["effect"] == "time" and sc["accuracy"] >= 55:
-			turn_time_limit += tech.get("value", 3.0)
-		stored_attacks.append(sc)
-		_show_combo_flash(sc)
-		_update_combo_display()
+	if trace_pts.size() <= 10:
+		trace_pts = []; trace_line.clear_points()
+		game_state = "idle"
+		return
 
-	# 次のキャラ（ランダム）
-	party_index = next_index
-	next_index  = randi() % party.size()
-	_update_current_char()
+	var sc      := _score_drawing()
+	var tech    : Dictionary = _get_tech(character)
+	var element : String     = character["element"]
+	var power_mult : float = float(mana.get(element, 0.0)) / MANA_MAX
+	mana[element] = maxf(0.0, mana[element] - MANA_COST)
+	_update_mana_ui()
 
 	trace_pts = []; trace_line.clear_points()
-	hint_lbl.text = ""; hint_lbl.modulate.a = 1.0
-	hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
-	draw_start_sec = Time.get_ticks_msec() / 1000.0
-	game_state = "idle" if go_idle else "drawing"
-
-	if not go_idle and character["id"] == "fio" and fio_freeze_start < 0.0:
-		fio_freeze_start = Time.get_ticks_msec() / 1000.0
-	sample_pts = _Shapes.make_sample_pts(current_shape, tx, ty,
-		fio_guide_r if character["id"] == "fio" else TARGET_R)
-
-func _show_combo_flash(sc: Dictionary) -> void:
+	game_state = "idle"
 	result_lbl.text = sc["rank"]
 	result_lbl.add_theme_color_override("font_color", sc["color"])
-	get_tree().create_timer(0.4).timeout.connect(func():
-		if game_state == "drawing": result_lbl.text = ""
+	get_tree().create_timer(0.5).timeout.connect(func():
+		if game_state == "idle": result_lbl.text = ""
 	)
 
-func _update_combo_display() -> void:
-	var n := stored_attacks.size()
-	combo_lbl.text = "⚡ %d combo" % n if n > 0 else ""
+	match tech.get("effect"):
+		"heal":
+			if sc["accuracy"] >= 55:
+				var heal := int(tech.get("value", 30) * sc["accuracy"] / 100.0 * power_mult)
+				player_hp = mini(player_max_hp, player_hp + heal)
+				_update_player_hp_bar()
+				power_lbl.text = "+%d HP ✨" % heal
+				power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
+				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
+		"time":
+			if sc["accuracy"] >= 55:
+				var ext : float = float(tech.get("value", 3.0)) * power_mult
+				wave_time_limit += ext
+				power_lbl.text = "+%.1fs ⏱" % ext
+				power_lbl.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
+				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
+		_:
+			var dmg := int(sc["damage"] * power_mult)
+			power_lbl.text = "-%d" % dmg
+			power_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
+			get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
+			_damage_enemy(dmg)
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# チェーン発動
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _fire_chain() -> void:
-	hint_lbl.modulate.a = 1.0; hint_lbl.text = ""
-	combo_lbl.text = ""
-	game_state = "chaining"
-	if stored_attacks.is_empty():
-		_advance_round(); return
-
-	# 最後のコンボがFORBIDDEN対象かチェック
-	var last  = stored_attacks[-1]
-	var ch    := last.get("char", party[0]) as Dictionary
-	var limit := 0.5 if ch["id"] == "fio" else 0.3
-	if last["accuracy"] < 30 and randf() < limit:
-		last["rank"]        = "FORBIDDEN!!"
-		last["color"]       = ch["color"]
-		last["damage"]      = randi_range(100, 250)
-		last["is_forbidden"] = true
-
-	if last.get("is_forbidden", false):
-		result_lbl.text = "FORBIDDEN!!"
-		result_lbl.add_theme_color_override("font_color", ch["color"])
-		power_lbl.text = "something incredible..."
-		_camera_shake(18.0, 0.6)
-		get_tree().create_timer(0.9).timeout.connect(func():
-			result_lbl.text = ""; power_lbl.text = ""
-			_fire_next(0)
-		)
-	else:
-		_fire_next(0)
-
-func _fire_next(idx: int) -> void:
-	if idx >= stored_attacks.size():
-		get_tree().create_timer(0.9).timeout.connect(func():
-			if boss_hp <= 0: _boss_defeated()
-			else: _advance_round()
-		)
-		return
-
-	var atk  = stored_attacks[idx]
-	var tech := atk.get("tech", {}) as Dictionary
-	var delay := 0.9 if atk.get("is_forbidden", false) else 0.45
-
-	# 回復技
-	if tech.get("effect") == "heal" and atk["accuracy"] >= 55:
-		var heal := int(tech.get("value", 30) * atk["accuracy"] / 100.0)
-		player_hp = mini(player_max_hp, player_hp + heal)
-		_update_player_hp_bar()
-		result_lbl.text = atk["rank"]
-		result_lbl.add_theme_color_override("font_color", atk["color"])
-		power_lbl.text = "+%d HP ✨" % heal
-		power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
-		get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
-		return
-
-	# ダメージ技
-	result_lbl.text = atk["rank"]
-	result_lbl.add_theme_color_override("font_color", atk["color"])
-	_show_float_text(tx, ty - TARGET_R - 20, "-%d" % atk["damage"], Color(1.0, 0.87, 0.0), 48)
-	boss_hp = maxi(0, boss_hp - atk["damage"])
-	_update_boss_hp_bar()
+func _damage_enemy(dmg: int) -> void:
+	if enemy_queue.is_empty(): return
+	_show_float_text(tx, ty - TARGET_R - 20, "-%d" % dmg, Color(1.0, 0.87, 0.0), 48)
+	enemy_queue[0]["hp"] = maxi(0, enemy_queue[0]["hp"] - dmg)
 	Sfx.play_hit()
-	_camera_shake(10.0 if atk.get("is_forbidden") else 5.0, 0.3)
-	_boss_flinch()
-	get_tree().create_timer(delay).timeout.connect(func(): _fire_next(idx + 1))
+	_camera_shake(5.0, 0.3)
+	_enemy_flinch()
+	if enemy_queue[0]["hp"] <= 0:
+		enemy_queue.pop_front()
+		if enemy_queue.is_empty():
+			_wave_cleared()
+			return
+	_update_enemy_ui()
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ラウンド・HP
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _boss_attack() -> void:
-	var dmg := 20 + round_num * 12
-	player_hp = maxi(0, player_hp - dmg)
-	_update_player_hp_bar()
-	_show_float_text(W/2, H - 60, "-%d" % dmg, Color(1.0, 0.27, 0.27), 36)
-	if player_hp <= 0:
-		get_tree().create_timer(0.8).timeout.connect(_player_defeated)
-
-func _advance_round() -> void:
-	_boss_attack()
-	if round_num >= max_rounds:
-		get_tree().create_timer(1.0).timeout.connect(_round_end)
-	else:
-		get_tree().create_timer(1.0).timeout.connect(func():
-			round_num += 1
-			round_lbl.text = "Round %d / %d" % [round_num, max_rounds]
-			_start_round()
-		)
-
-func _update_boss_hp_bar() -> void:
-	var ratio := float(boss_hp) / float(boss_max_hp)
-	boss_hp_fill.size.x = (W - 24) * ratio
-	boss_hp_lbl.text = "BOSS  %d / %d" % [boss_hp, boss_max_hp]
-	boss_hp_fill.color = Color(1.000, 0.400, 0.000) if ratio < 0.3 else Color(0.914, 0.271, 0.376)
+func _update_enemy_ui() -> void:
+	if enemy_queue.is_empty():
+		enemy_hp_fill.size.x = 0
+		enemy_hp_lbl.text = ""
+		enemy_name_lbl.text = ""
+		return
+	var e := enemy_queue[0]
+	var ratio := float(e["hp"]) / float(e["max_hp"])
+	enemy_hp_fill.size.x = (W - 24) * ratio
+	enemy_hp_lbl.text = "%d / %d" % [e["hp"], e["max_hp"]]
+	enemy_hp_fill.color = Color(1.000, 0.400, 0.000) if ratio < 0.3 else Color(0.67, 0.4, 0.85)
+	enemy_name_lbl.text = "残り %d体" % enemy_queue.size()
 
 func _update_player_hp_bar() -> void:
 	var ratio := float(player_hp) / float(player_max_hp)
@@ -1116,9 +1117,24 @@ func _update_player_hp_bar() -> void:
 	player_hp_lbl.text = "%d / %d" % [player_hp, player_max_hp]
 	player_hp_fill.color = Color(1.000, 0.267, 0.267) if ratio < 0.3 else Color(0.267, 0.533, 1.000)
 
-func _boss_defeated() -> void:
+func _wave_cleared() -> void:
+	wave_active = false
+	if wave_num >= MAX_WAVES:
+		_run_complete()
+		return
+	game_state = "wave_break"
+	result_lbl.text = "WAVE CLEAR!!"
+	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
+	get_tree().create_timer(1.0).timeout.connect(func():
+		result_lbl.text = ""
+		wave_num += 1
+		_start_wave()
+	)
+
+func _run_complete() -> void:
+	wave_active = false
 	game_state = "result"
-	result_lbl.text = "BOSS DEFEATED!!"
+	result_lbl.text = "ALL WAVES CLEAR!!"
 	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
 	power_lbl.text = ""
 	hint_lbl.text = ""
@@ -1132,16 +1148,6 @@ func _player_defeated() -> void:
 	result_lbl.text = "DEFEATED..."
 	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.27, 0.27))
 	power_lbl.text = "Tap to retry"
-	hint_lbl.text = ""
-	get_tree().create_timer(1.0).timeout.connect(func():
-		get_tree().reload_current_scene()
-	)
-
-func _round_end() -> void:
-	game_state = "result"
-	result_lbl.text = "Round Over..."
-	result_lbl.add_theme_color_override("font_color", Color(0.53, 0.53, 0.8))
-	power_lbl.text = "Boss HP: %d\nTap to retry" % boss_hp
 	hint_lbl.text = ""
 	get_tree().create_timer(1.0).timeout.connect(func():
 		get_tree().reload_current_scene()
@@ -1163,10 +1169,10 @@ func _camera_shake(intensity: float, duration: float) -> void:
 		tw.tween_interval(1.0 / 30.0)
 	tw.tween_callback(func(): camera.offset = Vector2.ZERO)
 
-func _boss_flinch() -> void:
+func _enemy_flinch() -> void:
 	var tw = create_tween()
-	tw.tween_property(boss_name_lbl, "scale", Vector2(1.3, 1.3), 0.08)
-	tw.tween_property(boss_name_lbl, "scale", Vector2(1.0, 1.0), 0.08)
+	tw.tween_property(enemy_name_lbl, "scale", Vector2(1.3, 1.3), 0.08)
+	tw.tween_property(enemy_name_lbl, "scale", Vector2(1.0, 1.0), 0.08)
 
 func _show_float_text(x: float, y: float, text: String, color: Color, size: int) -> void:
 	var lbl := Label.new()
