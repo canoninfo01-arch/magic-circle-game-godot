@@ -13,6 +13,11 @@ const MANA_COST          := 30.0
 const MANA_REGEN_PER_SEC := 6.0
 const MAX_WAVES   := 3
 const WAVE_TIME    := 20.0
+const ENEMY_LANE_Y      := 165.0
+const ENEMY_LANE_LEFT   := 40.0
+const ENEMY_ICON_SPACING := 50.0
+const ENEMY_ICON_SIZE    := 11.0
+const ENEMY_ICON_SMOOTH  := 4.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 画面
@@ -46,6 +51,7 @@ var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 # ウェーブ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var enemy_queue      : Array[Dictionary] = []
+var enemy_icons      : Array[Polygon2D]  = []
 var wave_active      : bool  = false
 var wave_time_limit  : float = WAVE_TIME
 var wave_start_sec   : float = 0.0
@@ -654,6 +660,7 @@ func _generate_wave(n: int) -> Array[Dictionary]:
 
 func _start_wave() -> void:
 	enemy_queue   = _generate_wave(wave_num)
+	_spawn_enemy_icons()
 	mana          = {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 	wave_time_limit = WAVE_TIME
 	wave_start_sec  = Time.get_ticks_msec() / 1000.0
@@ -987,6 +994,7 @@ func _process(delta: float) -> void:
 	for el in mana.keys():
 		mana[el] = minf(MANA_MAX, mana[el] + MANA_REGEN_PER_SEC * delta)
 	_update_mana_ui()
+	_update_enemy_icon_positions(delta)
 
 	var rem := _get_wave_remaining()
 	var frozen = character["id"] == "fio" and fio_freeze_start >= 0.0
@@ -1093,6 +1101,7 @@ func _damage_enemy(dmg: int) -> void:
 	_enemy_flinch()
 	if enemy_queue[0]["hp"] <= 0:
 		enemy_queue.pop_front()
+		_remove_front_enemy_icon()
 		if enemy_queue.is_empty():
 			_wave_cleared()
 			return
@@ -1110,6 +1119,43 @@ func _update_enemy_ui() -> void:
 	enemy_hp_lbl.text = "%d / %d" % [e["hp"], e["max_hp"]]
 	enemy_hp_fill.color = Color(1.000, 0.400, 0.000) if ratio < 0.3 else Color(0.67, 0.4, 0.85)
 	enemy_name_lbl.text = "残り %d体" % enemy_queue.size()
+
+func _make_diamond_polygon(r: float) -> PackedVector2Array:
+	return PackedVector2Array([
+		Vector2(0, -r), Vector2(r, 0), Vector2(0, r), Vector2(-r, 0)
+	])
+
+func _enemy_spawn_x(i: int) -> float:
+	return (W - ENEMY_LANE_LEFT) + i * ENEMY_ICON_SPACING
+
+func _spawn_enemy_icons() -> void:
+	for icon in enemy_icons:
+		icon.queue_free()
+	enemy_icons.clear()
+	for i in range(enemy_queue.size()):
+		var icon := Polygon2D.new()
+		icon.polygon  = _make_diamond_polygon(ENEMY_ICON_SIZE if i > 0 else ENEMY_ICON_SIZE * 1.4)
+		icon.color    = Color(0.4, 0.2, 0.5) if i > 0 else Color(0.85, 0.55, 1.0)
+		icon.position = Vector2(_enemy_spawn_x(i), ENEMY_LANE_Y)
+		ui_layer.add_child(icon)
+		enemy_icons.append(icon)
+
+func _remove_front_enemy_icon() -> void:
+	if enemy_icons.is_empty(): return
+	var icon : Polygon2D = enemy_icons.pop_front()
+	icon.queue_free()
+	if not enemy_icons.is_empty():
+		enemy_icons[0].polygon = _make_diamond_polygon(ENEMY_ICON_SIZE * 1.4)
+		enemy_icons[0].color   = Color(0.85, 0.55, 1.0)
+
+func _update_enemy_icon_positions(delta: float) -> void:
+	if enemy_icons.is_empty(): return
+	var rem      := _get_wave_remaining()
+	var progress := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
+	var t        := clampf(delta * ENEMY_ICON_SMOOTH, 0.0, 1.0)
+	for i in range(enemy_icons.size()):
+		var target_x := lerpf(_enemy_spawn_x(i), ENEMY_LANE_LEFT, progress)
+		enemy_icons[i].position.x = lerpf(enemy_icons[i].position.x, target_x, t)
 
 func _update_player_hp_bar() -> void:
 	var ratio := float(player_hp) / float(player_max_hp)
