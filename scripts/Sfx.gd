@@ -4,12 +4,14 @@ const MIX_RATE := 22050
 
 var _hit_stream: AudioStreamWAV
 var _card_get_stream: AudioStreamWAV
+var _card_get_rare_stream: AudioStreamWAV
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
 
 func _ready() -> void:
 	_hit_stream      = _build_hit_sfx()
-	_card_get_stream = _build_card_get_sfx()
+	_card_get_stream = _build_chime([523.25, 659.25, 783.99], 0.1, false)
+	_card_get_rare_stream = _build_chime([523.25, 659.25, 783.99, 1046.5], 0.12, true)
 	for i in range(4):
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -18,8 +20,8 @@ func _ready() -> void:
 func play_hit() -> void:
 	_play(_hit_stream)
 
-func play_card_get() -> void:
-	_play(_card_get_stream)
+func play_card_get(rarity: int = 1) -> void:
+	_play(_card_get_rare_stream if rarity >= 3 else _card_get_stream)
 
 func _play(stream: AudioStreamWAV) -> void:
 	var p := _players[_next_player]
@@ -41,18 +43,19 @@ func _build_hit_sfx() -> AudioStreamWAV:
 		data.encode_s16(i * 2, int(s * 32767.0))
 	return _wrap_wav(data)
 
-func _build_card_get_sfx() -> AudioStreamWAV:
-	var notes : Array[float] = [523.25, 659.25, 783.99]   # C5 - E5 - G5
-	var note_dur   := 0.1
+func _build_chime(notes: Array[float], note_dur: float, vibrato_last: bool) -> AudioStreamWAV:
 	var n_per_note := int(MIX_RATE * note_dur)
 	var data := PackedByteArray()
 	data.resize(n_per_note * notes.size() * 2)
 	var idx := 0
-	for freq in notes:
+	for ni in range(notes.size()):
+		var freq    := notes[ni]
+		var is_last := vibrato_last and ni == notes.size() - 1
 		for i in range(n_per_note):
 			var t   := float(i) / MIX_RATE
 			var env := exp(-t * 9.0)
-			var s : float = clamp(sin(2.0 * PI * freq * t) * env, -1.0, 1.0)
+			var f   := freq * (1.0 + 0.02 * sin(TAU * 22.0 * t)) if is_last else freq
+			var s : float = clamp(sin(2.0 * PI * f * t) * env, -1.0, 1.0)
 			data.encode_s16(idx * 2, int(s * 32767.0))
 			idx += 1
 	return _wrap_wav(data)

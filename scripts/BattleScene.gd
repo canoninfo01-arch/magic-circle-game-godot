@@ -85,6 +85,7 @@ var drop_card_bg   : ColorRect   = null
 var drop_name_lbl  : Label       = null
 var drop_rarity_lbl: Label       = null
 var drop_tap_lbl   : Label       = null
+var drop_flash     : ColorRect   = null
 
 # コレクション画面
 var coll_layer     : CanvasLayer = null
@@ -376,8 +377,9 @@ func _build_drop_screen() -> void:
 	drop_layer.add_child(get_lbl)
 
 	drop_card_bg = ColorRect.new()
-	drop_card_bg.size     = Vector2(220, 290)
-	drop_card_bg.position = Vector2(W / 2.0 - 110, H * 0.28)
+	drop_card_bg.size         = Vector2(220, 290)
+	drop_card_bg.position     = Vector2(W / 2.0 - 110, H * 0.28)
+	drop_card_bg.pivot_offset = drop_card_bg.size / 2.0
 	drop_layer.add_child(drop_card_bg)
 
 	drop_name_lbl = Label.new()
@@ -403,17 +405,94 @@ func _build_drop_screen() -> void:
 	drop_tap_lbl.add_theme_color_override("font_color", Color(0.5, 0.9, 1.0))
 	drop_layer.add_child(drop_tap_lbl)
 
+	drop_flash = ColorRect.new()
+	drop_flash.color = Color(1, 1, 1, 0)
+	drop_flash.size  = Vector2(W, H)
+	drop_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drop_layer.add_child(drop_flash)
+
+func _flash_screen(alpha: float, duration: float) -> void:
+	drop_flash.color.a = alpha
+	var tw := create_tween()
+	tw.tween_property(drop_flash, "color:a", 0.0, duration)
+
+func _make_star_polygon(r: float) -> PackedVector2Array:
+	var inner := r * 0.4
+	var pts := PackedVector2Array()
+	for i in range(10):
+		var a := float(i) / 10.0 * TAU - PI / 2.0
+		var d := r if i % 2 == 0 else inner
+		pts.append(Vector2(cos(a) * d, sin(a) * d))
+	return pts
+
+func _spawn_sparkle_burst(center: Vector2, count: int, rainbow: bool, color: Color) -> void:
+	var star_pts := _make_star_polygon(7.0)
+	for i in range(count):
+		var poly := Polygon2D.new()
+		poly.polygon  = star_pts
+		poly.color    = color
+		poly.position = center
+		drop_layer.add_child(poly)
+
+		var angle := randf_range(0.0, TAU)
+		var dist  := randf_range(60.0, 160.0)
+		var dest  := center + Vector2(cos(angle), sin(angle)) * dist
+		var dur   := randf_range(0.5, 0.8)
+
+		var tw := create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(poly, "position", dest, dur).set_ease(Tween.EASE_OUT)
+		tw.tween_property(poly, "rotation", randf_range(-4.0, 4.0), dur)
+		tw.tween_property(poly, "modulate:a", 0.0, dur).set_delay(dur * 0.3)
+		if rainbow:
+			tw.tween_method(func(h): poly.color = Color.from_hsv(h, 0.8, 1.0), 0.0, 1.0, dur)
+		tw.chain().tween_callback(poly.queue_free)
+
 func _show_drop_screen(card: Dictionary) -> void:
 	GameData.add_card(card["id"])
-	var col : Color = card["color"]
+	var col    : Color = card["color"]
+	var rarity : int   = card["rarity"]
+	var base_pos := drop_card_bg.position
+	var center   := base_pos + drop_card_bg.size / 2.0
+
 	drop_card_bg.color    = Color(col.r * 0.25, col.g * 0.25, col.b * 0.25)
 	drop_name_lbl.text    = card["name"]
 	drop_name_lbl.add_theme_color_override("font_color", col)
-	drop_rarity_lbl.text  = _Cards.rarity_label(card["rarity"])
+	drop_rarity_lbl.text  = _Cards.rarity_label(rarity)
 	drop_rarity_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
+
 	drop_layer.visible = true
 	game_state = "drop"
-	Sfx.play_card_get()
+	Sfx.play_card_get(rarity)
+
+	match rarity:
+		1:
+			_spawn_sparkle_burst(center, 3, false, Color(1.0, 1.0, 0.8))
+		2:
+			_flash_screen(0.5, 0.25)
+			_spawn_sparkle_burst(center, 7, false, Color(1.0, 0.85, 0.2))
+		3:
+			drop_card_bg.modulate.a   = 0.0
+			drop_name_lbl.modulate.a  = 0.0
+			drop_rarity_lbl.modulate.a = 0.0
+			_flash_screen(0.9, 0.4)
+			get_tree().create_timer(0.35).timeout.connect(func():
+				if not is_instance_valid(drop_card_bg): return
+				drop_card_bg.modulate.a   = 1.0
+				drop_name_lbl.modulate.a  = 1.0
+				drop_rarity_lbl.modulate.a = 1.0
+				_spawn_sparkle_burst(center, 16, true, Color(1.0, 0.3, 0.3))
+
+				var jt := create_tween()
+				for i in range(6):
+					var off := Vector2(randf_range(-5.0, 5.0), randf_range(-5.0, 5.0))
+					jt.tween_property(drop_card_bg, "position", base_pos + off, 1.0 / 30.0)
+				jt.tween_property(drop_card_bg, "position", base_pos, 1.0 / 30.0)
+
+				var pop := create_tween()
+				pop.tween_property(drop_card_bg, "scale", Vector2(1.12, 1.12), 0.12).from(Vector2(0.7, 0.7))
+				pop.tween_property(drop_card_bg, "scale", Vector2.ONE, 0.12)
+			)
 
 func _build_collection_screen() -> void:
 	coll_layer = CanvasLayer.new()
