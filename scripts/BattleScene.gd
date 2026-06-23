@@ -50,7 +50,7 @@ var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 # ウェーブ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var enemy_queue      : Array[Dictionary] = []
-var enemy_clusters   : Array[CPUParticles2D] = []
+var enemy_clusters   : Array[Dictionary] = []
 var wave_active      : bool  = false
 var wave_time_limit  : float = WAVE_TIME
 var wave_start_sec   : float = 0.0
