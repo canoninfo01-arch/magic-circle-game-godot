@@ -13,11 +13,10 @@ const MANA_COST          := 30.0
 const MANA_REGEN_PER_SEC := 6.0
 const MAX_WAVES   := 3
 const WAVE_TIME    := 20.0
-const ENEMY_LANE_Y      := 165.0
-const ENEMY_LANE_LEFT   := 40.0
-const ENEMY_ICON_SPACING := 50.0
-const ENEMY_ICON_SIZE    := 11.0
-const ENEMY_ICON_SMOOTH  := 4.0
+const ENEMY_SPAWN_Y     := 150.0
+const ENEMY_CLUSTER_N   := 8
+const ENEMY_APPROACH_SMOOTH := 3.0
+const MANA_PARTICLE_MAX := 12
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 画面
@@ -51,7 +50,7 @@ var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 # ウェーブ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var enemy_queue      : Array[Dictionary] = []
-var enemy_icons      : Array[Polygon2D]  = []
+var enemy_clusters   : Array[CPUParticles2D] = []
 var wave_active      : bool  = false
 var wave_time_limit  : float = WAVE_TIME
 var wave_start_sec   : float = 0.0
@@ -87,8 +86,9 @@ var player_hp_fill : ColorRect; var player_hp_lbl  : Label
 var timer_lbl      : Label;     var tech_lbl       : Label
 var result_lbl     : Label;     var power_lbl      : Label
 var hint_lbl       : Label
-var element_btns   : Dictionary = {}   # element -> Button
-var mana_fills     : Dictionary = {}   # element -> ColorRect
+var element_btns    : Dictionary = {}   # element -> Button
+var mana_particles  : Dictionary = {}   # element -> Array[Node2D]
+var mana_anchor_pos : Dictionary = {}   # element -> Vector2
 
 # ドロップ画面
 var drop_layer     : CanvasLayer = null
@@ -110,7 +110,7 @@ func _ready() -> void:
 	await get_tree().process_frame
 	var sz  = get_viewport_rect().size
 	W = sz.x; H = sz.y
-	tx = W / 2.0; ty = H / 2.0 + 15.0
+	tx = W / 2.0; ty = H * 0.62
 
 	party          = _Characters.get_all()
 	party_index    = 0
@@ -223,15 +223,37 @@ func _build_top_ui() -> void:
 		ui_layer.add_child(btn)
 		element_btns[el] = btn
 
-		var mp_bg := ColorRect.new()
-		mp_bg.color = Color(0.15, 0.15, 0.18); mp_bg.size = Vector2(slot_w - 4, 6)
-		mp_bg.position = Vector2(sx, 119); ui_layer.add_child(mp_bg)
-		var mp_fill := ColorRect.new()
-		mp_fill.color = ch["color"]; mp_fill.size = Vector2(slot_w - 4, 6)
-		mp_fill.position = Vector2(sx, 119); ui_layer.add_child(mp_fill)
-		mana_fills[el] = mp_fill
+		var anchor := Vector2(sx + (slot_w - 4) / 2.0, 122.0)
+		mana_anchor_pos[el] = anchor
+		_build_mana_particles(el, anchor, ch["color"])
 
 	tech_lbl = _lbl(W/2, 136, "", 12, Color(0.67, 0.67, 0.8))
+
+func _make_circle_polygon(r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(8):
+		var a := float(i) / 8.0 * TAU
+		pts.append(Vector2(cos(a) * r, sin(a) * r))
+	return pts
+
+func _build_mana_particles(el: String, anchor: Vector2, color: Color) -> void:
+	var pts : Array[Node2D] = []
+	for i in range(MANA_PARTICLE_MAX):
+		var dot := Polygon2D.new()
+		dot.polygon  = _make_circle_polygon(2.5)
+		dot.color    = color
+		dot.visible  = false
+		var off := Vector2(randf_range(-16.0, 16.0), randf_range(-7.0, 7.0))
+		dot.position = anchor + off
+		ui_layer.add_child(dot)
+		pts.append(dot)
+
+		var tw := create_tween().set_loops()
+		var off2 := Vector2(randf_range(-16.0, 16.0), randf_range(-7.0, 7.0))
+		var dur := randf_range(1.4, 2.2)
+		tw.tween_property(dot, "position", anchor + off2, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		tw.tween_property(dot, "position", anchor + off, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	mana_particles[el] = pts
 
 func _build_bottom_ui() -> void:
 	result_lbl = _lbl(W/2, H-128, "", 28, Color.WHITE)
@@ -660,7 +682,7 @@ func _generate_wave(n: int) -> Array[Dictionary]:
 
 func _start_wave() -> void:
 	enemy_queue   = _generate_wave(wave_num)
-	_spawn_enemy_icons()
+	_spawn_enemy_clusters()
 	mana          = {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 	wave_time_limit = WAVE_TIME
 	wave_start_sec  = Time.get_ticks_msec() / 1000.0
@@ -741,10 +763,11 @@ func _update_element_buttons() -> void:
 		btn.add_theme_stylebox_override("disabled", sbox)
 
 func _update_mana_ui() -> void:
-	var slot_w := (W - 20.0) / 3.0
-	for el in mana_fills.keys():
-		var fill : ColorRect = mana_fills[el]
-		fill.size.x = (slot_w - 4) * clampf(mana[el] / MANA_MAX, 0.0, 1.0)
+	for el in mana_particles.keys():
+		var dots  : Array     = mana_particles[el]
+		var count := int(floor(clampf(mana[el] / MANA_MAX, 0.0, 1.0) * MANA_PARTICLE_MAX))
+		for i in range(dots.size()):
+			dots[i].visible = i < count
 	_update_element_buttons()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -994,7 +1017,7 @@ func _process(delta: float) -> void:
 	for el in mana.keys():
 		mana[el] = minf(MANA_MAX, mana[el] + MANA_REGEN_PER_SEC * delta)
 	_update_mana_ui()
-	_update_enemy_icon_positions(delta)
+	_update_enemy_cluster_positions(delta)
 
 	var rem := _get_wave_remaining()
 	var frozen = character["id"] == "fio" and fio_freeze_start >= 0.0
@@ -1101,7 +1124,7 @@ func _damage_enemy(dmg: int) -> void:
 	_enemy_flinch()
 	if enemy_queue[0]["hp"] <= 0:
 		enemy_queue.pop_front()
-		_remove_front_enemy_icon()
+		_remove_front_enemy_cluster()
 		if enemy_queue.is_empty():
 			_wave_cleared()
 			return
@@ -1120,42 +1143,61 @@ func _update_enemy_ui() -> void:
 	enemy_hp_fill.color = Color(1.000, 0.400, 0.000) if ratio < 0.3 else Color(0.67, 0.4, 0.85)
 	enemy_name_lbl.text = "残り %d体" % enemy_queue.size()
 
-func _make_diamond_polygon(r: float) -> PackedVector2Array:
-	return PackedVector2Array([
-		Vector2(0, -r), Vector2(r, 0), Vector2(0, r), Vector2(-r, 0)
-	])
-
-func _enemy_spawn_x(i: int) -> float:
-	return (W - ENEMY_LANE_LEFT) + i * ENEMY_ICON_SPACING
-
-func _spawn_enemy_icons() -> void:
-	for icon in enemy_icons:
-		icon.queue_free()
-	enemy_icons.clear()
+func _spawn_enemy_clusters() -> void:
+	for cluster in enemy_clusters:
+		for dot in (cluster["dots"] as Array):
+			dot.queue_free()
+	enemy_clusters.clear()
 	for i in range(enemy_queue.size()):
-		var icon := Polygon2D.new()
-		icon.polygon  = _make_diamond_polygon(ENEMY_ICON_SIZE if i > 0 else ENEMY_ICON_SIZE * 1.4)
-		icon.color    = Color(0.4, 0.2, 0.5) if i > 0 else Color(0.85, 0.55, 1.0)
-		icon.position = Vector2(_enemy_spawn_x(i), ENEMY_LANE_Y)
-		ui_layer.add_child(icon)
-		enemy_icons.append(icon)
+		var n       := ENEMY_CLUSTER_N + (4 if i == 0 else 0)
+		var dots    : Array[Polygon2D] = []
+		var offsets : Array[Vector2]   = []
+		var phases  : Array[float]     = []
+		var col     := Color(0.85, 0.55, 1.0) if i == 0 else Color(0.55, 0.3, 0.7)
+		for j in range(n):
+			var dot := Polygon2D.new()
+			dot.polygon = _make_circle_polygon(randf_range(2.5, 4.5))
+			dot.color   = col
+			add_child(dot)
+			move_child(dot, guide_rail.get_index())
+			dots.append(dot)
+			offsets.append(Vector2(randf_range(-22.0, 22.0), randf_range(-14.0, 14.0)))
+			phases.append(randf_range(0.0, TAU))
+		enemy_clusters.append({
+			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
+			"offsets": offsets, "phases": phases, "scale": 0.5 if i > 0 else 0.7
+		})
 
-func _remove_front_enemy_icon() -> void:
-	if enemy_icons.is_empty(): return
-	var icon : Polygon2D = enemy_icons.pop_front()
-	icon.queue_free()
-	if not enemy_icons.is_empty():
-		enemy_icons[0].polygon = _make_diamond_polygon(ENEMY_ICON_SIZE * 1.4)
-		enemy_icons[0].color   = Color(0.85, 0.55, 1.0)
+func _remove_front_enemy_cluster() -> void:
+	if enemy_clusters.is_empty(): return
+	var cluster = enemy_clusters.pop_front()
+	for dot in (cluster["dots"] as Array):
+		dot.queue_free()
+	if not enemy_clusters.is_empty():
+		var front = enemy_clusters[0]
+		front["scale"] = 0.7
+		for dot in (front["dots"] as Array):
+			dot.color = Color(0.85, 0.55, 1.0)
 
-func _update_enemy_icon_positions(delta: float) -> void:
-	if enemy_icons.is_empty(): return
-	var rem      := _get_wave_remaining()
-	var progress := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
-	var t        := clampf(delta * ENEMY_ICON_SMOOTH, 0.0, 1.0)
-	for i in range(enemy_icons.size()):
-		var target_x := lerpf(_enemy_spawn_x(i), ENEMY_LANE_LEFT, progress)
-		enemy_icons[i].position.x = lerpf(enemy_icons[i].position.x, target_x, t)
+func _update_enemy_cluster_positions(delta: float) -> void:
+	if enemy_clusters.is_empty(): return
+	var rem       := _get_wave_remaining()
+	var progress  := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
+	var t         := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
+	var time      := Time.get_ticks_msec() / 1000.0
+	var spawn_pt  := Vector2(tx, ENEMY_SPAWN_Y)
+	var target_pt := Vector2(tx, ty)
+	for cluster in enemy_clusters:
+		var dest : Vector2 = spawn_pt.lerp(target_pt, progress)
+		cluster["pos"] = (cluster["pos"] as Vector2).lerp(dest, t)
+		var scl     : float = lerpf(cluster["scale"], (cluster["scale"] as float) * 2.2, progress)
+		var dots    : Array  = cluster["dots"]
+		var offsets : Array  = cluster["offsets"]
+		var phases  : Array  = cluster["phases"]
+		for j in range(dots.size()):
+			var wander := Vector2(sin(time * 1.3 + (phases[j] as float)), cos(time * 1.7 + (phases[j] as float))) * 4.0
+			dots[j].position = (cluster["pos"] as Vector2) + (offsets[j] as Vector2) * scl + wander
+			dots[j].scale    = Vector2.ONE * scl
 
 func _update_player_hp_bar() -> void:
 	var ratio := float(player_hp) / float(player_max_hp)
