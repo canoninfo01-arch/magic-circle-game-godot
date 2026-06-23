@@ -1156,16 +1156,16 @@ func _spawn_enemy_clusters() -> void:
 		var col     := Color(0.85, 0.55, 1.0) if i == 0 else Color(0.55, 0.3, 0.7)
 		for j in range(n):
 			var dot := Polygon2D.new()
-			dot.polygon = _make_circle_polygon(randf_range(2.5, 4.5))
+			dot.polygon = _make_circle_polygon(randf_range(5.0, 9.0))
 			dot.color   = col
 			add_child(dot)
 			move_child(dot, guide_rail.get_index())
 			dots.append(dot)
-			offsets.append(Vector2(randf_range(-22.0, 22.0), randf_range(-14.0, 14.0)))
+			offsets.append(Vector2(randf_range(-28.0, 28.0), randf_range(-18.0, 18.0)))
 			phases.append(randf_range(0.0, TAU))
 		enemy_clusters.append({
 			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
-			"offsets": offsets, "phases": phases, "scale": 0.5 if i > 0 else 0.7
+			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9
 		})
 
 func _remove_front_enemy_cluster() -> void:
@@ -1175,14 +1175,15 @@ func _remove_front_enemy_cluster() -> void:
 		dot.queue_free()
 	if not enemy_clusters.is_empty():
 		var front = enemy_clusters[0]
-		front["scale"] = 0.7
+		front["scale"] = 0.9
 		for dot in (front["dots"] as Array):
 			dot.color = Color(0.85, 0.55, 1.0)
 
 func _update_enemy_cluster_positions(delta: float) -> void:
 	if enemy_clusters.is_empty(): return
 	var rem       := _get_wave_remaining()
-	var progress  := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
+	var raw       := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
+	var progress  := pow(raw, 0.55)   # 序盤から動きが分かるようイージング
 	var t         := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
 	var time      := Time.get_ticks_msec() / 1000.0
 	var spawn_pt  := Vector2(tx, ENEMY_SPAWN_Y)
@@ -1190,7 +1191,7 @@ func _update_enemy_cluster_positions(delta: float) -> void:
 	for cluster in enemy_clusters:
 		var dest : Vector2 = spawn_pt.lerp(target_pt, progress)
 		cluster["pos"] = (cluster["pos"] as Vector2).lerp(dest, t)
-		var scl     : float = lerpf(cluster["scale"], (cluster["scale"] as float) * 2.2, progress)
+		var scl     : float = lerpf(cluster["scale"], (cluster["scale"] as float) * 4.0, progress)
 		var dots    : Array  = cluster["dots"]
 		var offsets : Array  = cluster["offsets"]
 		var phases  : Array  = cluster["phases"]
