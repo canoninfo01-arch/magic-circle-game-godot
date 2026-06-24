@@ -88,7 +88,6 @@ var result_lbl     : Label;     var power_lbl      : Label
 var hint_lbl       : Label
 var element_btns    : Dictionary = {}   # element -> Button
 var mana_particles  : Dictionary = {}   # element -> Array[Node2D]
-var mana_anchor_pos : Dictionary = {}   # element -> Vector2
 
 # ドロップ画面
 var drop_layer     : CanvasLayer = null
@@ -223,9 +222,7 @@ func _build_top_ui() -> void:
 		ui_layer.add_child(btn)
 		element_btns[el] = btn
 
-		var anchor := Vector2(sx + (slot_w - 4) / 2.0, 122.0)
-		mana_anchor_pos[el] = anchor
-		_build_mana_particles(el, anchor, ch["color"])
+		_build_mana_particles(el, ch["color"])
 
 	tech_lbl = _lbl(W/2, 136, "", 12, Color(0.67, 0.67, 0.8))
 
@@ -236,23 +233,26 @@ func _make_circle_polygon(r: float) -> PackedVector2Array:
 		pts.append(Vector2(cos(a) * r, sin(a) * r))
 	return pts
 
-func _build_mana_particles(el: String, anchor: Vector2, color: Color) -> void:
+func _build_mana_particles(el: String, color: Color) -> void:
 	var pts : Array[Node2D] = []
 	for i in range(MANA_PARTICLE_MAX):
 		var dot := Polygon2D.new()
-		dot.polygon  = _make_circle_polygon(2.5)
-		dot.color    = color
-		dot.visible  = false
-		var off := Vector2(randf_range(-16.0, 16.0), randf_range(-7.0, 7.0))
-		dot.position = anchor + off
-		ui_layer.add_child(dot)
+		dot.polygon    = _make_circle_polygon(3.0)
+		dot.color      = color
+		dot.modulate.a = 0.7
+		dot.visible    = false
+		var home := Vector2(randf_range(24.0, W - 24.0), randf_range(130.0, H - 100.0))
+		dot.position = home
+		add_child(dot)
+		move_child(dot, guide_rail.get_index())
 		pts.append(dot)
 
 		var tw := create_tween().set_loops()
-		var off2 := Vector2(randf_range(-16.0, 16.0), randf_range(-7.0, 7.0))
-		var dur := randf_range(1.4, 2.2)
-		tw.tween_property(dot, "position", anchor + off2, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_property(dot, "position", anchor + off, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		var off1 := home + Vector2(randf_range(-60.0, 60.0), randf_range(-60.0, 60.0))
+		var off2 := home + Vector2(randf_range(-60.0, 60.0), randf_range(-60.0, 60.0))
+		var dur  := randf_range(3.0, 5.0)
+		tw.tween_property(dot, "position", off1, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		tw.tween_property(dot, "position", off2, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	mana_particles[el] = pts
 
 func _build_bottom_ui() -> void:
