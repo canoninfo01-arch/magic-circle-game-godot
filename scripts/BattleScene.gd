@@ -80,7 +80,6 @@ var guide_line     : Line2D
 var trace_line     : Line2D
 var ui_layer       : CanvasLayer
 
-var enemy_hp_fill  : ColorRect; var enemy_hp_lbl   : Label
 var enemy_name_lbl : Label;     var wave_lbl       : Label
 var player_hp_fill : ColorRect; var player_hp_lbl  : Label
 var timer_lbl      : Label;     var tech_lbl       : Label
@@ -187,16 +186,7 @@ func _build_top_ui() -> void:
 	_lbl(W/2, 18,  "MAGIC CIRCLE", 14, Color(0.53, 0.53, 0.8)).set_h_size_flags(Control.SIZE_SHRINK_CENTER)
 	enemy_name_lbl = _lbl(W/2, 38, "", 18, Color(1.0, 0.67, 0.27))
 
-	# 敵HPバー
-	var ep_bg = ColorRect.new()
-	ep_bg.color = Color(0.196, 0.196, 0.196); ep_bg.size = Vector2(W-24, 14)
-	ep_bg.position = Vector2(12, 52); ui_layer.add_child(ep_bg)
-	enemy_hp_fill = ColorRect.new()
-	enemy_hp_fill.color = Color(0.67, 0.4, 0.85); enemy_hp_fill.size = Vector2(W-24, 14)
-	enemy_hp_fill.position = Vector2(12, 52); ui_layer.add_child(enemy_hp_fill)
-	enemy_hp_lbl = _lbl(W/2, 59, "", 10, Color.WHITE)
-
-	wave_lbl = _lbl(W/2, 76, "WAVE 1 / %d" % MAX_WAVES, 13, Color(0.53, 0.53, 0.8))
+	wave_lbl = _lbl(W/2, 52, "WAVE 1 / %d" % MAX_WAVES, 13, Color(0.53, 0.53, 0.8))
 
 	# 属性選択ボタン（3つ）＋魔素ゲージ
 	var slot_w := (W - 20.0) / 3.0
@@ -1128,20 +1118,24 @@ func _damage_enemy(dmg: int) -> void:
 		if enemy_queue.is_empty():
 			_wave_cleared()
 			return
+	else:
+		_update_front_cluster_hp_visual()
 	_update_enemy_ui()
 
 func _update_enemy_ui() -> void:
 	if enemy_queue.is_empty():
-		enemy_hp_fill.size.x = 0
-		enemy_hp_lbl.text = ""
 		enemy_name_lbl.text = ""
 		return
-	var e := enemy_queue[0]
-	var ratio := float(e["hp"]) / float(e["max_hp"])
-	enemy_hp_fill.size.x = (W - 24) * ratio
-	enemy_hp_lbl.text = "%d / %d" % [e["hp"], e["max_hp"]]
-	enemy_hp_fill.color = Color(1.000, 0.400, 0.000) if ratio < 0.3 else Color(0.67, 0.4, 0.85)
 	enemy_name_lbl.text = "残り %d体" % enemy_queue.size()
+
+func _update_front_cluster_hp_visual() -> void:
+	if enemy_clusters.is_empty() or enemy_queue.is_empty(): return
+	var dots  : Array = enemy_clusters[0]["dots"]
+	var e     := enemy_queue[0]
+	var ratio := float(e["hp"]) / float(e["max_hp"])
+	var visible_n := int(ceil(ratio * dots.size()))
+	for i in range(dots.size()):
+		dots[i].visible = i < visible_n
 
 func _spawn_enemy_clusters() -> void:
 	for cluster in enemy_clusters:
@@ -1167,6 +1161,7 @@ func _spawn_enemy_clusters() -> void:
 			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
 			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9
 		})
+	_update_front_cluster_hp_visual()
 
 func _remove_front_enemy_cluster() -> void:
 	if enemy_clusters.is_empty(): return
@@ -1178,6 +1173,7 @@ func _remove_front_enemy_cluster() -> void:
 		front["scale"] = 0.9
 		for dot in (front["dots"] as Array):
 			dot.color = Color(0.85, 0.55, 1.0)
+		_update_front_cluster_hp_visual()
 
 func _update_enemy_cluster_positions(delta: float) -> void:
 	if enemy_clusters.is_empty(): return
