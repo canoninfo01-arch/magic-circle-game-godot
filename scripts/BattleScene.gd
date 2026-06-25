@@ -75,6 +75,7 @@ var active_touches : Dictionary = {}
 # ノード参照
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var camera         : Camera2D
+var danger_line    : Line2D
 var guide_rail     : Line2D
 var guide_line     : Line2D
 var trace_line     : Line2D
@@ -148,6 +149,11 @@ func _build_nodes() -> void:
 	var bg = ColorRect.new()
 	bg.color = Color(0.059, 0.059, 0.137); bg.size = Vector2(W, H)
 	add_child(bg)
+
+	# 危険ライン（敵がここまで迫ると時間切れでダメージ）
+	danger_line = _make_line(3.0, Color(1.0, 0.3, 0.3, 0.15))
+	danger_line.points = PackedVector2Array([Vector2(20, ty), Vector2(W - 20, ty)])
+	add_child(danger_line)
 
 	# ガイド
 	guide_rail = _make_line(44.0, Color(0,0,0,0))
@@ -1152,6 +1158,7 @@ func _spawn_enemy_clusters() -> void:
 			var dot := Polygon2D.new()
 			dot.polygon = _make_circle_polygon(randf_range(5.0, 9.0))
 			dot.color   = col
+			dot.visible = false
 			add_child(dot)
 			move_child(dot, guide_rail.get_index())
 			dots.append(dot)
@@ -1159,9 +1166,9 @@ func _spawn_enemy_clusters() -> void:
 			phases.append(randf_range(0.0, TAU))
 		enemy_clusters.append({
 			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
-			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9
+			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9,
+			"delay": i * 0.3, "appeared": false
 		})
-	_update_front_cluster_hp_visual()
 
 func _remove_front_enemy_cluster() -> void:
 	if enemy_clusters.is_empty(): return
@@ -1176,15 +1183,32 @@ func _remove_front_enemy_cluster() -> void:
 		_update_front_cluster_hp_visual()
 
 func _update_enemy_cluster_positions(delta: float) -> void:
-	if enemy_clusters.is_empty(): return
 	var rem       := _get_wave_remaining()
 	var raw       := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
 	var progress  := pow(raw, 0.55)   # 序盤から動きが分かるようイージング
+
+	# 危険ライン：時間が減るほど太く・濃く光る
+	danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15 + raw * 0.6)
+	danger_line.width = 3.0 + raw * 6.0
+
+	if enemy_clusters.is_empty(): return
 	var t         := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
 	var time      := Time.get_ticks_msec() / 1000.0
+	var since_start := time - wave_start_sec
 	var spawn_pt  := Vector2(tx, ENEMY_SPAWN_Y)
 	var target_pt := Vector2(tx, ty)
-	for cluster in enemy_clusters:
+	for idx in range(enemy_clusters.size()):
+		var cluster = enemy_clusters[idx]
+		if since_start < (cluster["delay"] as float):
+			continue   # まだ出現タイミングではない
+		if not (cluster["appeared"] as bool):
+			cluster["appeared"] = true
+			if idx == 0:
+				_update_front_cluster_hp_visual()
+			else:
+				for dot in (cluster["dots"] as Array):
+					dot.visible = true
+
 		var dest : Vector2 = spawn_pt.lerp(target_pt, progress)
 		cluster["pos"] = (cluster["pos"] as Vector2).lerp(dest, t)
 		var scl     : float = lerpf(cluster["scale"], (cluster["scale"] as float) * 4.0, progress)
