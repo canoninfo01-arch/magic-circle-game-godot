@@ -19,7 +19,7 @@ static func get_all() -> Array:
 			"desc": "判定が広い。PERFECTを取りやすい。初心者向け。",
 			"techniques": [
 				{"id": "thunder_circle", "name": "雷円陣", "shape": "circle",   "effect": "damage"},
-				{"id": "thunder_time",   "name": "時雷陣", "shape": "triangle", "effect": "time", "value": 3.0},
+				{"id": "thunder_time",   "name": "時雷陣", "shape": "triangle", "effect": "pushback", "value": 4.0},
 			]
 		},
 		{

@@ -12,7 +12,9 @@ const MANA_MAX           := 100.0
 const MANA_COST          := 30.0
 const MANA_REGEN_PER_SEC := 6.0
 const MAX_WAVES   := 3
-const WAVE_TIME    := 20.0
+const ENEMY_APPROACH_DURATION := 12.0
+const ENEMY_HIT_COOLDOWN      := 1.5
+const ENEMY_LINE_DAMAGE_BASE  := 15
 const ENEMY_SPAWN_Y     := 150.0
 const ENEMY_CLUSTER_N   := 8
 const ENEMY_APPROACH_SMOOTH := 3.0
@@ -52,8 +54,7 @@ var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
 var enemy_queue      : Array[Dictionary] = []
 var enemy_clusters   : Array[Dictionary] = []
 var wave_active      : bool  = false
-var wave_time_limit  : float = WAVE_TIME
-var wave_start_sec   : float = 0.0
+var wave_start_sec   : float = 0.0   # 敵の出現タイミングのずらしに使う基準時刻
 var fio_frozen_sec   : float = 0.0
 var fio_freeze_start : float = -1.0
 var current_shape    : String = "circle"
@@ -83,7 +84,7 @@ var ui_layer       : CanvasLayer
 
 var enemy_name_lbl : Label;     var wave_lbl       : Label
 var player_hp_fill : ColorRect; var player_hp_lbl  : Label
-var timer_lbl      : Label;     var tech_lbl       : Label
+var tech_lbl       : Label
 var result_lbl     : Label;     var power_lbl      : Label
 var hint_lbl       : Label
 var element_btns    : Dictionary = {}   # element -> Button
@@ -255,8 +256,6 @@ func _build_bottom_ui() -> void:
 	result_lbl = _lbl(W/2, H-128, "", 28, Color.WHITE)
 	power_lbl  = _lbl(W/2, H-88,  "", 18, Color(1.0, 0.87, 0.0))
 	hint_lbl   = _lbl(W/2, H-52,  "Fill the shape!!", 13, Color(0.4, 0.4, 0.55))
-	timer_lbl  = _lbl(W-16, H-52, "", 20, Color.WHITE)
-	timer_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	# プレイヤーHPバー
 	_lbl(16, H-18, "YOU", 10, Color(0.53, 0.67, 1.0)).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -680,7 +679,6 @@ func _start_wave() -> void:
 	enemy_queue   = _generate_wave(wave_num)
 	_spawn_enemy_clusters()
 	mana          = {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
-	wave_time_limit = WAVE_TIME
 	wave_start_sec  = Time.get_ticks_msec() / 1000.0
 	wave_active     = true
 	fio_frozen_sec  = 0.0; fio_freeze_start = -1.0
@@ -700,7 +698,6 @@ func _clear_display() -> void:
 	trace_line.clear_points()
 	result_lbl.text = ""; power_lbl.text = ""
 	hint_lbl.text = "Fill the shape!!"; hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
-	timer_lbl.text = ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # パーティ管理
@@ -999,13 +996,8 @@ func _score_drawing() -> Dictionary:
 	        "char": character, "tech": _get_tech(character)}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ウェーブ・魔素タイマー
+# 魔素タイマー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _get_wave_remaining() -> float:
-	if not wave_active: return 0.0
-	var frozen := fio_frozen_sec + (Time.get_ticks_msec() / 1000.0 - fio_freeze_start if fio_freeze_start >= 0.0 else 0.0)
-	return maxf(0.0, wave_time_limit - (Time.get_ticks_msec() / 1000.0 - wave_start_sec) + frozen)
 
 func _process(delta: float) -> void:
 	if not wave_active: return
@@ -1015,49 +1007,15 @@ func _process(delta: float) -> void:
 	_update_mana_ui()
 	_update_enemy_cluster_positions(delta)
 
-	var rem := _get_wave_remaining()
-	var frozen = character["id"] == "fio" and fio_freeze_start >= 0.0
-	timer_lbl.text = "%.1fs" % rem
-	if frozen:
-		timer_lbl.add_theme_color_override("font_color", Color(0.27, 0.67, 1.0))
-	elif rem <= 2.0:
-		timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.27, 0.27))
-	else:
-		timer_lbl.add_theme_color_override("font_color", Color.WHITE)
-
-	if rem <= 0.0 and game_state in ["drawing", "idle", "drawn"]:
-		_wave_timeout()
-
-func _wave_timeout() -> void:
-	if character["id"] == "fio" and fio_freeze_start >= 0.0:
-		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
-		fio_freeze_start = -1.0
-	wave_active = false
-	timer_lbl.text = ""
-	trace_line.clear_points(); trace_pts = []
-	result_lbl.text = ""
-
-	var remaining := enemy_queue.size()
-	if remaining > 0:
-		var dmg := remaining * 15
-		player_hp = maxi(0, player_hp - dmg)
-		_update_player_hp_bar()
-		_show_float_text(W / 2.0, H - 60, "-%d" % dmg, Color(1.0, 0.27, 0.27), 36)
-
+func _enemy_reached_line(cluster: Dictionary) -> void:
+	var dmg := ENEMY_LINE_DAMAGE_BASE + wave_num * 5
+	player_hp = maxi(0, player_hp - dmg)
+	_update_player_hp_bar()
+	_show_float_text(W / 2.0, H - 60, "-%d" % dmg, Color(1.0, 0.27, 0.27), 36)
+	cluster["approach_start"] = Time.get_ticks_msec() / 1000.0 + ENEMY_HIT_COOLDOWN
 	if player_hp <= 0:
+		wave_active = false
 		get_tree().create_timer(0.8).timeout.connect(_player_defeated)
-		return
-
-	game_state = "wave_break"
-	hint_lbl.text = "WAVE OVER..."
-	hint_lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.27))
-	get_tree().create_timer(1.4).timeout.connect(func():
-		if wave_num >= MAX_WAVES:
-			_run_complete()
-		else:
-			wave_num += 1
-			_start_wave()
-	)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 発動・敵
@@ -1097,11 +1055,13 @@ func _resolve_cast() -> void:
 				power_lbl.text = "+%d HP ✨" % heal
 				power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
 				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
-		"time":
+		"pushback":
 			if sc["accuracy"] >= 55:
-				var ext : float = float(tech.get("value", 3.0)) * power_mult
-				wave_time_limit += ext
-				power_lbl.text = "+%.1fs ⏱" % ext
+				var sec : float = float(tech.get("value", 4.0)) * power_mult
+				for cluster in enemy_clusters:
+					if cluster["appeared"]:
+						cluster["approach_start"] = (cluster["approach_start"] as float) + sec
+				power_lbl.text = "後退 +%.1fs ⏱" % sec
 				power_lbl.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
 				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
 		_:
@@ -1167,7 +1127,7 @@ func _spawn_enemy_clusters() -> void:
 		enemy_clusters.append({
 			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
 			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9,
-			"delay": i * 0.3, "appeared": false
+			"delay": i * 0.3, "appeared": false, "approach_start": 0.0
 		})
 
 func _remove_front_enemy_cluster() -> void:
@@ -1183,31 +1143,37 @@ func _remove_front_enemy_cluster() -> void:
 		_update_front_cluster_hp_visual()
 
 func _update_enemy_cluster_positions(delta: float) -> void:
-	var rem       := _get_wave_remaining()
-	var raw       := clampf(1.0 - (rem / wave_time_limit), 0.0, 1.0)
-	var progress  := pow(raw, 0.55)   # 序盤から動きが分かるようイージング
+	if enemy_clusters.is_empty():
+		danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15)
+		danger_line.width = 3.0
+		return
 
-	# 危険ライン：時間が減るほど太く・濃く光る
-	danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15 + raw * 0.6)
-	danger_line.width = 3.0 + raw * 6.0
-
-	if enemy_clusters.is_empty(): return
-	var t         := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
-	var time      := Time.get_ticks_msec() / 1000.0
+	var t           := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
+	var time        := Time.get_ticks_msec() / 1000.0
 	var since_start := time - wave_start_sec
-	var spawn_pt  := Vector2(tx, ENEMY_SPAWN_Y)
-	var target_pt := Vector2(tx, ty)
+	var spawn_pt    := Vector2(tx, ENEMY_SPAWN_Y)
+	var target_pt   := Vector2(tx, ty)
+	var max_raw     := 0.0
+
 	for idx in range(enemy_clusters.size()):
 		var cluster = enemy_clusters[idx]
 		if since_start < (cluster["delay"] as float):
 			continue   # まだ出現タイミングではない
 		if not (cluster["appeared"] as bool):
-			cluster["appeared"] = true
+			cluster["appeared"]      = true
+			cluster["approach_start"] = time
 			if idx == 0:
 				_update_front_cluster_hp_visual()
 			else:
 				for dot in (cluster["dots"] as Array):
 					dot.visible = true
+
+		# クラスター単位の接近サイクル（出発→危険ライン→ダメージ→後退して再接近）
+		var raw      := clampf((time - (cluster["approach_start"] as float)) / ENEMY_APPROACH_DURATION, 0.0, 1.0)
+		var progress := pow(raw, 0.55)   # 序盤から動きが分かるようイージング
+		max_raw = maxf(max_raw, raw)
+		if raw >= 1.0:
+			_enemy_reached_line(cluster)
 
 		var dest : Vector2 = spawn_pt.lerp(target_pt, progress)
 		cluster["pos"] = (cluster["pos"] as Vector2).lerp(dest, t)
@@ -1219,6 +1185,10 @@ func _update_enemy_cluster_positions(delta: float) -> void:
 			var wander := Vector2(sin(time * 1.3 + (phases[j] as float)), cos(time * 1.7 + (phases[j] as float))) * 4.0
 			dots[j].position = (cluster["pos"] as Vector2) + (offsets[j] as Vector2) * scl + wander
 			dots[j].scale    = Vector2.ONE * scl
+
+	# 危険ライン：一番接近している敵に応じて太く・濃く光る
+	danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15 + max_raw * 0.6)
+	danger_line.width = 3.0 + max_raw * 6.0
 
 func _update_player_hp_bar() -> void:
 	var ratio := float(player_hp) / float(player_max_hp)
