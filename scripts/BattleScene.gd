@@ -131,21 +131,12 @@ func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
 
-	# カメラ（旧コードに倣い make_current してビューを確定させる）
-	var cam := Camera2D.new()
-	cam.position = Vector2(W * 0.5, H * 0.5)
-	add_child(cam)
-	cam.make_current()
-
-	# 背景は CanvasLayer layer=0 に入れると確実に描画される
-	var bg_layer := CanvasLayer.new()
-	bg_layer.layer = 0
-	add_child(bg_layer)
+	# 背景は Node2D に直接・最初に追加（最背面に描画される）
 	var bg := ColorRect.new()
 	bg.color = Color(0.06, 0.06, 0.14)
 	bg.size = Vector2(W, H)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bg_layer.add_child(bg)
+	add_child(bg)
 
 	_build_ui()
 	_build_draw_layer()
