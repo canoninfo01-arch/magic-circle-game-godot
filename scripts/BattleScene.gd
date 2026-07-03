@@ -1,1268 +1,659 @@
 extends Node2D
 
-const _Characters = preload("res://scripts/Characters.gd")
-const _Shapes     = preload("res://scripts/Shapes.gd")
-const _Cards      = preload("res://scripts/Cards.gd")
+const _Shapes = preload("res://scripts/Shapes.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const TARGET_R    := 140.0
-const MANA_MAX           := 100.0
-const MANA_COST          := 30.0
-const MANA_REGEN_PER_SEC := 6.0
-const MAX_WAVES   := 3
-const ENEMY_APPROACH_DURATION := 12.0
-const ENEMY_HIT_COOLDOWN      := 1.5
-const ENEMY_LINE_DAMAGE_BASE  := 15
-const ENEMY_SPAWN_Y     := 150.0
-const ENEMY_CLUSTER_N   := 8
-const ENEMY_APPROACH_SMOOTH := 3.0
-const MANA_PARTICLE_MAX := 12
+const PLAYER_SPEED     := 220.0
+const PLAYER_HP_MAX    := 10
+const PLAYER_R         := 18.0
+const MAX_ALLIES       := 10
+const ALLY_OUTER_R     := 110.0
+const ALLY_MID_R       := 70.0
+const ALLY_INNER_R     := 38.0
+const ALLY_BASE_SIZE   := 14.0
+
+const ENEMY_SPAWN_BASE := 2.5
+const ENEMY_SPEED_BASE := 75.0
+const ENEMY_HP_BASE    := 30
+const ENEMY_R          := 14.0
+const ENEMY_DAMAGE     := 1
+
+const ITEM_DROP_CHANCE := 0.35
+const CHAR_ITEM_RATIO  := 0.4
+const ITEM_PICKUP_R    := 38.0
+const ITEM_R           := 14.0
+
+const BULLET_SPEED     := 330.0
+const BULLET_RANGE     := 260.0
+const BULLET_R         := 5.0
+const BULLET_DMG_BASE  := 12
+const ATTACK_RANGE     := 220.0
+const ATTACK_INTERVAL  := 1.2
+
+const DRAW_DURATION    := 8.0
+const DRAW_GUIDE_R     := 120.0
+const DRAW_COVER_THR   := 0.70
+const DRAW_BRUSH_R     := 18.0
+
+const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
+
+const SHAPE_DATA := {
+	"circle":   { "color": Color(0.25, 0.55, 1.0),  "bullets": 0, "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80 },
+	"triangle": { "color": Color(1.0,  0.3,  0.3),  "bullets": 3, "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35 },
+	"square":   { "color": Color(0.3,  1.0,  0.45), "bullets": 4, "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55 },
+	"star":     { "color": Color(1.0,  0.85, 0.1),  "bullets": 5, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25 },
+}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 画面
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var W: float; var H: float
-var tx: float; var ty: float   # target center
 var jp_font: Font = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# パーティ
+# ゲーム状態
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var party          : Array = []
-var party_index    : int   = 0
-var intro_layer    : CanvasLayer = null
-var character      : Dictionary = {}
+var game_state    := "battle"   # "battle" | "drawing" | "game_over"
+var elapsed_time  := 0.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# バトル状態
+# プレイヤー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var game_state    : String = "idle"
-var player_max_hp : int    = 300
-var player_hp     : int    = 300
-var wave_num      : int    = 1
+var player_hp    := PLAYER_HP_MAX
+var player_pos   := Vector2.ZERO
+var player_node  : Polygon2D = null
+var joy_id       : int = -1
+var joy_origin   := Vector2.ZERO
+var joy_vec      := Vector2.ZERO
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 魔素（マナ）
+# 仲間
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var mana := {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
+# ally: { shape, hp, max_hp, coating, node:Polygon2D, attack_timer }
+var allies : Array[Dictionary] = []
+var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0, "bullet_bonus": 0 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ウェーブ
+# 敵
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var enemy_queue      : Array[Dictionary] = []
-var enemy_clusters   : Array[Dictionary] = []
-var wave_active      : bool  = false
-var wave_start_sec   : float = 0.0   # 敵の出現タイミングのずらしに使う基準時刻
-var fio_frozen_sec   : float = 0.0
-var fio_freeze_start : float = -1.0
-var current_shape    : String = "circle"
+# enemy: { hp, max_hp, pos, node:Polygon2D, kb:Vector2 }
+var enemies          : Array[Dictionary] = []
+var enemy_spawn_timer := 0.0
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 弾
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# bullet: { pos, dir:Vector2, traveled, dmg, node:Polygon2D }
+var bullets : Array[Dictionary] = []
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# アイテム
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# item: { type:"weapon"|"char", subtype:String, pos, node:Polygon2D }
+var items : Array[Dictionary] = []
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 描画フェーズ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+var draw_shape       := "circle"
+var draw_timer       := 0.0
+var coating_count    := 0
+var trace_pts        : Array[Vector2] = []
 var sample_pts       : Array[Vector2] = []
-var fio_guide_r      : float = TARGET_R
-var fio_tween        : Tween = null
-var guide_tween      : Tween = null   # アギのフェード
-var blink_tween      : Tween = null
+var draw_touch_id    : int = -1
+
+var draw_layer    : CanvasLayer = null
+var trace_line    : Line2D      = null
+var guide_line    : Line2D      = null
+var coating_lbl   : Label       = null
+var draw_timer_lbl: Label       = null
+var shape_btn_row : Array[Button] = []
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 描画
+# UI
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var trace_pts      : Array[Vector2] = []
-var draw_start_sec : float  = 0.0
-var round_start_sec: float  = 0.0   # アギの早描きボーナス用
-var active_touches : Dictionary = {}
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ノード参照
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var camera         : Camera2D
-var danger_line    : Line2D
-var guide_rail     : Line2D
-var guide_line     : Line2D
-var trace_line     : Line2D
-var ui_layer       : CanvasLayer
-
-var enemy_name_lbl : Label;     var wave_lbl       : Label
-var player_hp_fill : ColorRect; var player_hp_lbl  : Label
-var tech_lbl       : Label
-var result_lbl     : Label;     var power_lbl      : Label
-var hint_lbl       : Label
-var element_btns    : Dictionary = {}   # element -> Button
-var mana_particles  : Dictionary = {}   # element -> Array[Node2D]
-
-# ドロップ画面
-var drop_layer     : CanvasLayer = null
-var drop_card_bg   : ColorRect   = null
-var drop_name_lbl  : Label       = null
-var drop_rarity_lbl: Label       = null
-var drop_tap_lbl   : Label       = null
-var drop_flash     : ColorRect   = null
-
-# コレクション画面
-var coll_layer     : CanvasLayer = null
-
+var ui_layer      : CanvasLayer = null
+var hp_lbl        : Label       = null
+var time_lbl      : Label       = null
+var ally_lbl      : Label       = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 func _ready() -> void:
 	await get_tree().process_frame
-	var sz  = get_viewport_rect().size
+	var sz = get_viewport_rect().size
 	W = sz.x; H = sz.y
-	tx = W / 2.0; ty = H * 0.62
-
-	party          = _Characters.get_all()
-	party_index    = 0
-	character      = party[party_index]
-	current_shape  = party[party_index]["techniques"][0]["shape"]  # _get_tech未初期化のため固定
-	sample_pts     = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
-
-	_build_nodes()
-	_build_intro()
-	_build_drop_screen()
-	_build_collection_screen()
+	player_pos = Vector2(W * 0.5, H * 0.6)
 
 	jp_font = load("res://fonts/jp_font.ttf")
+
+	_build_ui()
+	_build_draw_layer()
+	_build_player()
+
+func _build_player() -> void:
+	player_node = Polygon2D.new()
+	player_node.polygon = _make_ngon(5, PLAYER_R)
+	player_node.color = Color(1.0, 1.0, 1.0)
+	player_node.position = player_pos
+	add_child(player_node)
+
+func _build_ui() -> void:
+	ui_layer = CanvasLayer.new()
+	ui_layer.layer = 10
+	add_child(ui_layer)
+
+	var bg = ColorRect.new()
+	bg.color = Color(0.06, 0.06, 0.14)
+	bg.size = Vector2(W, H)
+	ui_layer.add_child(bg)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	hp_lbl = _make_label("HP: 10", 16, Vector2(12, 12))
+	ui_layer.add_child(hp_lbl)
+
+	time_lbl = _make_label("0s", 16, Vector2(W - 70, 12))
+	ui_layer.add_child(time_lbl)
+
+	ally_lbl = _make_label("仲間: 0", 14, Vector2(12, 42))
+	ui_layer.add_child(ally_lbl)
+
+func _build_draw_layer() -> void:
+	draw_layer = CanvasLayer.new()
+	draw_layer.layer = 20
+	add_child(draw_layer)
+	draw_layer.visible = false
+
+	var dim = ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.size = Vector2(W, H)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	draw_layer.add_child(dim)
+
+	guide_line = Line2D.new()
+	guide_line.width = 2.0
+	guide_line.default_color = Color(1.0, 1.0, 1.0, 0.35)
+	draw_layer.add_child(guide_line)
+
+	trace_line = Line2D.new()
+	trace_line.width = 4.0
+	trace_line.default_color = Color(0.4, 0.9, 1.0)
+	draw_layer.add_child(trace_line)
+
+	draw_timer_lbl = _make_label("8.0", 32, Vector2(W * 0.5 - 20, H * 0.12))
+	draw_timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	draw_layer.add_child(draw_timer_lbl)
+
+	coating_lbl = _make_label("×0", 42, Vector2(W * 0.5 - 24, H * 0.78))
+	coating_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	draw_layer.add_child(coating_lbl)
+
+	var btn_y := H * 0.05
+	var shapes_list := ["circle", "triangle", "square", "star"]
+	var labels_list := ["○", "△", "□", "★"]
+	for i in range(4):
+		var btn := Button.new()
+		btn.text = labels_list[i]
+		btn.size = Vector2(70, 50)
+		btn.position = Vector2(W * 0.5 - 150 + i * 78, btn_y)
+		btn.pressed.connect(_on_shape_btn.bind(shapes_list[i]))
+		draw_layer.add_child(btn)
+		shape_btn_row.append(btn)
+
 	if jp_font:
-		_apply_font(self, jp_font)
-
-	_show_intro()
+		_apply_font(draw_layer, jp_font)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ノード構築
+# メインループ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _process(delta: float) -> void:
+	match game_state:
+		"battle":
+			elapsed_time += delta
+			_update_player(delta)
+			_update_enemies(delta)
+			_update_allies(delta)
+			_update_bullets(delta)
+			_update_items()
+			_spawn_enemies(delta)
+			_update_ui()
+		"drawing":
+			_update_drawing(delta)
+		"game_over":
+			pass
+
+func _update_player(delta: float) -> void:
+	if joy_vec.length_squared() > 0.01:
+		var spd := PLAYER_SPEED * weapon_stats["move_speed"]
+		player_pos += joy_vec * spd * delta
+		player_pos.x = clampf(player_pos.x, PLAYER_R, W - PLAYER_R)
+		player_pos.y = clampf(player_pos.y, PLAYER_R, H - PLAYER_R)
+	if player_node:
+		player_node.position = player_pos
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 敵
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _spawn_enemies(delta: float) -> void:
+	enemy_spawn_timer -= delta
+	if enemy_spawn_timer > 0.0: return
+	var interval := maxf(0.8, ENEMY_SPAWN_BASE - elapsed_time * 0.03)
+	enemy_spawn_timer = interval
+	_spawn_one_enemy()
+
+func _spawn_one_enemy() -> void:
+	var pos := _random_edge_pos()
+	var hp := int(ENEMY_HP_BASE + elapsed_time * 0.8)
+	var spd := ENEMY_SPEED_BASE + elapsed_time * 0.5
+
+	var node := Polygon2D.new()
+	node.polygon = _make_ngon(3, ENEMY_R)
+	node.color = Color(0.9, 0.25, 0.35)
+	node.position = pos
+	add_child(node)
+
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "node": node, "kb": Vector2.ZERO })
+
+func _update_enemies(delta: float) -> void:
+	var to_remove : Array[int] = []
+	for i in range(enemies.size()):
+		var e := enemies[i]
+		e["kb"] = e["kb"].lerp(Vector2.ZERO, delta * 5.0)
+		var dir := (player_pos - e["pos"]).normalized()
+		e["pos"] += dir * e["speed"] * delta + e["kb"] * delta
+		e["node"].position = e["pos"]
+
+		# プレイヤーとの衝突
+		if e["pos"].distance_to(player_pos) < PLAYER_R + ENEMY_R:
+			player_hp -= ENEMY_DAMAGE
+			to_remove.append(i)
+			e["node"].queue_free()
+			if player_hp <= 0:
+				_game_over()
+				return
+			continue
+
+		# 仲間との衝突
+		for a in allies:
+			if e["pos"].distance_to(a["node"].position) < ALLY_BASE_SIZE + ENEMY_R:
+				var kb_dir := (e["pos"] - a["node"].position).normalized()
+				var kb_r := a.get("kb_resist", 0.5)
+				e["kb"] += kb_dir * 180.0
+				a["hp"] -= 8
+				if a["hp"] <= 0:
+					_remove_ally(a)
+				break
+
+	for i in range(to_remove.size() - 1, -1, -1):
+		enemies.remove_at(to_remove[i])
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 仲間
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _update_allies(delta: float) -> void:
+	var circles : Array[Dictionary] = []
+	var mids    : Array[Dictionary] = []
+	var stars_a : Array[Dictionary] = []
+
+	for a in allies:
+		match a["shape"]:
+			"circle":   circles.append(a)
+			"triangle", "square": mids.append(a)
+			"star":     stars_a.append(a)
+
+	_position_ring(circles, ALLY_OUTER_R, delta)
+	_position_ring(mids,    ALLY_MID_R,   delta)
+	_position_ring(stars_a, ALLY_INNER_R, delta)
+
+	for a in allies:
+		a["attack_timer"] -= delta
+		if a["attack_timer"] <= 0.0:
+			_ally_attack(a)
+			a["attack_timer"] = ATTACK_INTERVAL / weapon_stats["atk_speed"]
+
+func _position_ring(ring: Array[Dictionary], radius: float, delta: float) -> void:
+	if ring.is_empty(): return
+	for i in range(ring.size()):
+		var angle := float(i) / float(ring.size()) * TAU
+		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
+		var spd := SHAPE_DATA[ring[i]["shape"]]["speed_m"] * 300.0
+		var cur_pos : Vector2 = ring[i]["node"].position
+		ring[i]["node"].position = cur_pos.lerp(target, minf(1.0, delta * spd / cur_pos.distance_to(target) if cur_pos.distance_to(target) > 1.0 else 1.0))
+
+func _ally_attack(a: Dictionary) -> void:
+	var shape := a["shape"]
+	var bullet_count : int = SHAPE_DATA[shape]["bullets"] + weapon_stats["bullet_bonus"]
+	if bullet_count <= 0: return
+
+	var ally_pos : Vector2 = a["node"].position
+	var nearest := _nearest_enemy(ally_pos)
+	if nearest == null: return
+
+	var dmg := int(BULLET_DMG_BASE * weapon_stats["damage"])
+	var base_dir := (nearest["pos"] - ally_pos).normalized()
+
+	if shape == "star":
+		for i in range(bullet_count):
+			var angle := float(i) / float(bullet_count) * TAU
+			_fire_bullet(ally_pos, Vector2(cos(angle), sin(angle)), dmg)
+	else:
+		var spread := 0.15 * (bullet_count - 1)
+		for i in range(bullet_count):
+			var offset := -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
+			var dir := base_dir.rotated(offset)
+			_fire_bullet(ally_pos, dir, dmg)
+
+func _fire_bullet(from: Vector2, dir: Vector2, dmg: int) -> void:
+	var node := Polygon2D.new()
+	node.polygon = _make_ngon(6, BULLET_R)
+	node.color = Color(1.0, 0.95, 0.4)
+	node.position = from
+	add_child(node)
+	bullets.append({ "pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node })
+
+func _remove_ally(a: Dictionary) -> void:
+	a["node"].queue_free()
+	allies.erase(a)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 弾
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _update_bullets(delta: float) -> void:
+	var to_remove : Array[int] = []
+	for i in range(bullets.size()):
+		var b := bullets[i]
+		b["pos"] += b["dir"] * BULLET_SPEED * delta
+		b["traveled"] += BULLET_SPEED * delta
+		b["node"].position = b["pos"]
+
+		var hit := false
+		for e in enemies:
+			if b["pos"].distance_to(e["pos"]) < ENEMY_R + BULLET_R:
+				e["hp"] -= b["dmg"]
+				if e["hp"] <= 0:
+					_on_enemy_death(e)
+				hit = true
+				break
+
+		if hit or b["traveled"] >= BULLET_RANGE:
+			b["node"].queue_free()
+			to_remove.append(i)
+
+	for i in range(to_remove.size() - 1, -1, -1):
+		bullets.remove_at(to_remove[i])
+
+func _on_enemy_death(e: Dictionary) -> void:
+	if randf() < ITEM_DROP_CHANCE:
+		_spawn_item(e["pos"])
+	e["node"].queue_free()
+	enemies.erase(e)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# アイテム
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _spawn_item(pos: Vector2) -> void:
+	var is_char := randf() < CHAR_ITEM_RATIO
+	var item_type := "char" if is_char else "weapon"
+	var subtype := ""
+	if is_char:
+		subtype = ["circle", "triangle", "square", "star"][randi() % 4]
+	else:
+		subtype = WEAPON_SUBTYPES[randi() % 4]
+
+	var col := Color(0.7, 0.4, 1.0) if is_char else Color(1.0, 0.55, 0.1)
+	var node := Polygon2D.new()
+	node.polygon = _make_ngon(4, ITEM_R)
+	node.color = col
+	node.position = pos
+	add_child(node)
+
+	items.append({ "type": item_type, "subtype": subtype, "pos": pos, "node": node })
+
+func _update_items() -> void:
+	var to_remove : Array[int] = []
+	for i in range(items.size()):
+		var it := items[i]
+		if player_pos.distance_to(it["pos"]) < ITEM_PICKUP_R + PLAYER_R:
+			if it["type"] == "weapon":
+				_apply_weapon(it["subtype"])
+				it["node"].queue_free()
+				to_remove.append(i)
+			elif it["type"] == "char":
+				it["node"].queue_free()
+				to_remove.append(i)
+				_start_drawing(it["subtype"])
+				break
+	for i in range(to_remove.size() - 1, -1, -1):
+		items.remove_at(to_remove[i])
+
+func _apply_weapon(subtype: String) -> void:
+	match subtype:
+		"atk_speed":    weapon_stats["atk_speed"]   += 0.2
+		"damage":       weapon_stats["damage"]       += 0.3
+		"move_speed":   weapon_stats["move_speed"]   += 0.15
+		"bullet_bonus": weapon_stats["bullet_bonus"] += 1
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 描画フェーズ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _start_drawing(suggested_shape: String) -> void:
+	game_state = "drawing"
+	draw_shape = suggested_shape
+	draw_timer = DRAW_DURATION
+	coating_count = 0
+	trace_pts.clear()
+	trace_line.clear_points()
+	draw_touch_id = -1
+	_refresh_draw_guide()
+	draw_layer.visible = true
+
+func _on_shape_btn(shape: String) -> void:
+	if game_state != "drawing": return
+	draw_shape = shape
+	trace_pts.clear()
+	trace_line.clear_points()
+	coating_count = 0
+	coating_lbl.text = "×0"
+	_refresh_draw_guide()
+
+func _refresh_draw_guide() -> void:
+	var cx := W * 0.5
+	var cy := H * 0.5
+	sample_pts = _Shapes.make_sample_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
+	var guide_pts := _Shapes.make_guide_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
+	guide_line.clear_points()
+	for p in guide_pts:
+		guide_line.add_point(p)
+
+func _update_drawing(delta: float) -> void:
+	draw_timer -= delta
+	draw_timer_lbl.text = "%.1f" % maxf(0.0, draw_timer)
+
+	if not trace_pts.is_empty() and sample_pts.size() > 0:
+		var cov := _calc_coverage(trace_pts, sample_pts)
+		if cov >= DRAW_COVER_THR:
+			coating_count += 1
+			coating_lbl.text = "×%d" % coating_count
+			trace_pts.clear()
+			trace_line.clear_points()
+
+	if draw_timer <= 0.0:
+		_end_drawing()
+
+func _end_drawing() -> void:
+	draw_layer.visible = false
+	game_state = "battle"
+	_add_ally(draw_shape, coating_count)
+
+func _add_ally(shape: String, coating: int) -> void:
+	var data := SHAPE_DATA[shape]
+	var hp_base : int = data["hp_base"]
+	var hp := hp_base + coating * 20
+	var kb_r : float = data["kb_r"]
+
+	if allies.size() >= MAX_ALLIES:
+		var worst := _most_damaged_ally()
+		if worst != null:
+			_remove_ally(worst)
+
+	var col := _ally_color(shape, coating)
+	var sz  := _ally_size(coating)
+	var node := Polygon2D.new()
+	node.polygon = _make_shape_polygon(shape, sz)
+	node.color = col
+	node.position = player_pos
+	add_child(node)
+
+	allies.append({
+		"shape": shape, "hp": hp, "max_hp": hp, "coating": coating,
+		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
+		"kb_resist": kb_r
+	})
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# タッチ入力
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _input(event: InputEvent) -> void:
+	if game_state == "battle":
+		_handle_joystick(event)
+	elif game_state == "drawing":
+		_handle_draw_input(event)
+
+func _handle_joystick(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed and joy_id == -1:
+			joy_id = event.index
+			joy_origin = event.position
+			joy_vec = Vector2.ZERO
+		elif not event.pressed and event.index == joy_id:
+			joy_id = -1
+			joy_vec = Vector2.ZERO
+	elif event is InputEventScreenDrag:
+		if event.index == joy_id:
+			var delta_v := event.position - joy_origin
+			if delta_v.length() > 10.0:
+				joy_vec = delta_v.normalized()
+			else:
+				joy_vec = Vector2.ZERO
+
+func _handle_draw_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed and draw_touch_id == -1:
+			draw_touch_id = event.index
+			trace_pts.clear()
+			trace_line.clear_points()
+			trace_pts.append(event.position)
+			trace_line.add_point(event.position)
+		elif not event.pressed and event.index == draw_touch_id:
+			draw_touch_id = -1
+	elif event is InputEventScreenDrag and event.index == draw_touch_id:
+		trace_pts.append(event.position)
+		trace_line.add_point(event.position)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ゲームオーバー
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _game_over() -> void:
+	game_state = "game_over"
+	var over_lbl := _make_label("GAME OVER\n%.0fs" % elapsed_time, 48, Vector2(W * 0.5 - 120, H * 0.4))
+	over_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+	ui_layer.add_child(over_lbl)
+	if jp_font:
+		over_lbl.add_theme_font_override("font", jp_font)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# UI 更新
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _update_ui() -> void:
+	hp_lbl.text   = "HP: %d" % player_hp
+	time_lbl.text = "%.0fs" % elapsed_time
+	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ユーティリティ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2]) -> float:
+	if s_pts.is_empty() or t_pts.is_empty(): return 0.0
+	var covered := 0
+	for sp in s_pts:
+		for tp in t_pts:
+			if tp.distance_to(sp) < DRAW_BRUSH_R:
+				covered += 1
+				break
+	return float(covered) / float(s_pts.size())
+
+func _nearest_enemy(from: Vector2) -> Dictionary:
+	var best : Dictionary = {}
+	var best_d := ATTACK_RANGE
+	for e in enemies:
+		var d := from.distance_to(e["pos"])
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
+
+func _most_damaged_ally() -> Dictionary:
+	var worst : Dictionary = {}
+	var worst_ratio := 2.0
+	for a in allies:
+		var ratio := float(a["hp"]) / float(a["max_hp"])
+		if ratio < worst_ratio:
+			worst_ratio = ratio
+			worst = a
+	return worst
+
+func _ally_color(shape: String, coating: int) -> Color:
+	var base : Color = SHAPE_DATA[shape]["color"]
+	var brightness := 0.5 + minf(0.5, float(coating) * 0.12)
+	return base * brightness
+
+func _ally_size(coating: int) -> float:
+	return ALLY_BASE_SIZE + minf(10.0, float(coating) * 2.0)
+
+func _random_edge_pos() -> Vector2:
+	var edge := randi() % 4
+	match edge:
+		0: return Vector2(randf_range(0, W), -20)
+		1: return Vector2(randf_range(0, W), H + 20)
+		2: return Vector2(-20, randf_range(0, H))
+		_: return Vector2(W + 20, randf_range(0, H))
+
+func _make_ngon(n: int, r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(n):
+		var a := float(i) / float(n) * TAU - PI / 2.0
+		pts.append(Vector2(cos(a) * r, sin(a) * r))
+	return pts
+
+func _make_shape_polygon(shape: String, size: float) -> PackedVector2Array:
+	match shape:
+		"circle":   return _make_ngon(12, size)
+		"triangle": return _make_ngon(3, size)
+		"square":   return _make_ngon(4, size)
+		"star":
+			var pts := PackedVector2Array()
+			var inner := size * 0.45
+			for i in range(10):
+				var a := float(i) / 10.0 * TAU - PI / 2.0
+				var d := size if i % 2 == 0 else inner
+				pts.append(Vector2(cos(a) * d, sin(a) * d))
+			return pts
+	return _make_ngon(6, size)
+
+func _make_label(txt: String, font_size: int, pos: Vector2) -> Label:
+	var lbl := Label.new()
+	lbl.text = txt
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.position = pos
+	if jp_font:
+		lbl.add_theme_font_override("font", jp_font)
+	return lbl
 
 func _apply_font(node: Node, font: Font) -> void:
 	if node is Label or node is Button:
 		node.add_theme_font_override("font", font)
 	for child in node.get_children():
 		_apply_font(child, font)
-
-func _build_nodes() -> void:
-	# カメラ（シェイク用）
-	camera = Camera2D.new()
-	camera.position = Vector2(W / 2.0, H / 2.0)
-	add_child(camera)
-	camera.make_current()
-
-	# 背景
-	var bg = ColorRect.new()
-	bg.color = Color(0.059, 0.059, 0.137); bg.size = Vector2(W, H)
-	add_child(bg)
-
-	# 危険ライン（敵がここまで迫ると時間切れでダメージ）
-	danger_line = _make_line(3.0, Color(1.0, 0.3, 0.3, 0.15))
-	danger_line.points = PackedVector2Array([Vector2(20, ty), Vector2(W - 20, ty)])
-	add_child(danger_line)
-
-	# ガイド
-	guide_rail = _make_line(44.0, Color(0,0,0,0))
-	add_child(guide_rail)
-	guide_line = _make_line(2.0, Color(0,0,0,0))
-	add_child(guide_line)
-	_redraw_guide()
-
-	# 描画軌跡
-	trace_line = _make_line(12.0 * 2.0, Color(0.267, 0.667, 1.0, 0.75))
-	trace_line.begin_cap_mode = Line2D.LINE_CAP_ROUND
-	trace_line.end_cap_mode   = Line2D.LINE_CAP_ROUND
-	add_child(trace_line)
-
-	# UI レイヤー
-	ui_layer = CanvasLayer.new()
-	add_child(ui_layer)
-
-	_build_top_ui()
-	_build_bottom_ui()
-
-func _make_line(w: float, col: Color) -> Line2D:
-	var l = Line2D.new()
-	l.width = w; l.default_color = col
-	l.joint_mode = Line2D.LINE_JOINT_ROUND
-	return l
-
-func _char_for_element(el: String) -> Dictionary:
-	for ch in party:
-		if ch["element"] == el:
-			return ch
-	return party[0]
-
-func _build_top_ui() -> void:
-	# ヘッダー
-	_lbl(W/2, 18,  "MAGIC CIRCLE", 14, Color(0.53, 0.53, 0.8)).set_h_size_flags(Control.SIZE_SHRINK_CENTER)
-	enemy_name_lbl = _lbl(W/2, 38, "", 18, Color(1.0, 0.67, 0.27))
-
-	wave_lbl = _lbl(W/2, 52, "WAVE 1 / %d" % MAX_WAVES, 13, Color(0.53, 0.53, 0.8))
-
-	# 属性選択ボタン（3つ）＋魔素ゲージ
-	var slot_w := (W - 20.0) / 3.0
-	var elements : Array[String] = ["fire", "thunder", "ice"]
-	for i in range(3):
-		var el : String = elements[i]
-		var ch  := _char_for_element(el)
-		var sx  := 10.0 + slot_w * i
-
-		var btn := Button.new()
-		btn.text     = ch["emoji"] + " " + ch["name"]
-		btn.size     = Vector2(slot_w - 4, 26)
-		btn.position = Vector2(sx, 90)
-		btn.add_theme_font_size_override("font_size", 12)
-		var sbox := StyleBoxFlat.new()
-		sbox.bg_color = Color(ch["color"].r * 0.25, ch["color"].g * 0.25, ch["color"].b * 0.25)
-		sbox.set_corner_radius_all(6)
-		btn.add_theme_stylebox_override("normal",  sbox)
-		btn.add_theme_stylebox_override("hover",   sbox)
-		btn.add_theme_stylebox_override("pressed", sbox)
-		btn.add_theme_color_override("font_color", ch["color"])
-		btn.pressed.connect(_on_element_chosen.bind(el))
-		ui_layer.add_child(btn)
-		element_btns[el] = btn
-
-		_build_mana_particles(el, ch["color"])
-
-	tech_lbl = _lbl(W/2, 136, "", 12, Color(0.67, 0.67, 0.8))
-
-func _make_circle_polygon(r: float) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in range(8):
-		var a := float(i) / 8.0 * TAU
-		pts.append(Vector2(cos(a) * r, sin(a) * r))
-	return pts
-
-func _build_mana_particles(el: String, color: Color) -> void:
-	var pts : Array[Node2D] = []
-	for i in range(MANA_PARTICLE_MAX):
-		var dot := Polygon2D.new()
-		dot.polygon    = _make_circle_polygon(3.0)
-		dot.color      = color
-		dot.modulate.a = 0.7
-		dot.visible    = false
-		var home := Vector2(randf_range(24.0, W - 24.0), randf_range(130.0, H - 100.0))
-		dot.position = home
-		add_child(dot)
-		move_child(dot, guide_rail.get_index())
-		pts.append(dot)
-
-		var tw := create_tween().set_loops()
-		var off1 := home + Vector2(randf_range(-60.0, 60.0), randf_range(-60.0, 60.0))
-		var off2 := home + Vector2(randf_range(-60.0, 60.0), randf_range(-60.0, 60.0))
-		var dur  := randf_range(3.0, 5.0)
-		tw.tween_property(dot, "position", off1, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_property(dot, "position", off2, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	mana_particles[el] = pts
-
-func _build_bottom_ui() -> void:
-	result_lbl = _lbl(W/2, H-128, "", 28, Color.WHITE)
-	power_lbl  = _lbl(W/2, H-88,  "", 18, Color(1.0, 0.87, 0.0))
-	hint_lbl   = _lbl(W/2, H-52,  "Fill the shape!!", 13, Color(0.4, 0.4, 0.55))
-
-	# プレイヤーHPバー
-	_lbl(16, H-18, "YOU", 10, Color(0.53, 0.67, 1.0)).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	var phb_bg = ColorRect.new()
-	phb_bg.color = Color(0.196, 0.196, 0.196); phb_bg.size = Vector2(W-70, 12)
-	phb_bg.position = Vector2(42, H-25); ui_layer.add_child(phb_bg)
-	player_hp_fill = ColorRect.new()
-	player_hp_fill.color = Color(0.267, 0.533, 1.000); player_hp_fill.size = Vector2(W-70, 12)
-	player_hp_fill.position = Vector2(42, H-25); ui_layer.add_child(player_hp_fill)
-	player_hp_lbl = _lbl(42 + (W-70)/2, H-18, "", 10, Color.WHITE)
-
-	_update_player_hp_bar()
-
-func _lbl(x: float, y: float, text: String, size: int, col: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.size = Vector2(W, size + 8)
-	l.position = Vector2(0, y - (size + 8) / 2.0)
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", col)
-	ui_layer.add_child(l)
-	# Store x hint for centering — label spans full width so origin is fine
-	return l
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# キャラ紹介画面 (Intro)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _build_intro() -> void:
-	intro_layer = CanvasLayer.new()
-	intro_layer.layer = 2
-	intro_layer.visible = false
-	add_child(intro_layer)
-
-	var bg = ColorRect.new()
-	bg.color        = Color(0.04, 0.04, 0.12)
-	bg.size         = Vector2(W, H)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	intro_layer.add_child(bg)
-
-	var title_lbl = Label.new()
-	title_lbl.text = "パーティ紹介"
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_lbl.size     = Vector2(W, 36)
-	title_lbl.position = Vector2(0, 20)
-	title_lbl.add_theme_font_size_override("font_size", 22)
-	title_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 1.0))
-	intro_layer.add_child(title_lbl)
-
-	var card_h  := 128.0
-	var card_gap := 12.0
-	var top_y   := 68.0
-	var smap    := {"circle": "円", "triangle": "三角", "star": "星"}
-
-	for i in range(party.size()):
-		var ch   = party[i]
-		var tech = ch["techniques"][0]
-		var cy   := top_y + i * (card_h + card_gap)
-		var col  : Color = ch["color"]
-
-		var card_bg = ColorRect.new()
-		card_bg.color        = Color(col.r * 0.22, col.g * 0.22, col.b * 0.22)
-		card_bg.size         = Vector2(W - 32, card_h)
-		card_bg.position     = Vector2(16, cy)
-		card_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		intro_layer.add_child(card_bg)
-
-		var accent = ColorRect.new()
-		accent.color        = col
-		accent.size         = Vector2(5, card_h)
-		accent.position     = Vector2(16, cy)
-		accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		intro_layer.add_child(accent)
-
-		var name_lbl = Label.new()
-		name_lbl.text = ch["emoji"] + "  " + ch["name"] + "  【" + ch["attr"] + "】"
-		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		name_lbl.size     = Vector2(W - 52, 28)
-		name_lbl.position = Vector2(30, cy + 8)
-		name_lbl.add_theme_font_size_override("font_size", 18)
-		name_lbl.add_theme_color_override("font_color", col)
-		intro_layer.add_child(name_lbl)
-
-		var tname_lbl = Label.new()
-		tname_lbl.text = "技：" + tech["name"] + "（" + smap.get(tech["shape"], tech["shape"]) + "）"
-		tname_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		tname_lbl.size     = Vector2(W - 52, 22)
-		tname_lbl.position = Vector2(30, cy + 42)
-		tname_lbl.add_theme_font_size_override("font_size", 13)
-		tname_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.8))
-		intro_layer.add_child(tname_lbl)
-
-		var desc_lbl = Label.new()
-		desc_lbl.text = ch["desc"]
-		desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		desc_lbl.size     = Vector2(W - 52, 56)
-		desc_lbl.position = Vector2(30, cy + 68)
-		desc_lbl.add_theme_font_size_override("font_size", 11)
-		desc_lbl.add_theme_color_override("font_color", Color(0.75, 0.75, 0.85))
-		intro_layer.add_child(desc_lbl)
-
-	var tap_lbl = Label.new()
-	tap_lbl.text = "▶  タップしてスタート"
-	tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tap_lbl.size     = Vector2(W, 36)
-	tap_lbl.position = Vector2(0, H - 72)
-	tap_lbl.add_theme_font_size_override("font_size", 18)
-	tap_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
-	intro_layer.add_child(tap_lbl)
-
-	# 全画面スタートボタン（透明・最下層）
-	var start_btn = Button.new()
-	start_btn.flat     = true
-	start_btn.size     = Vector2(W, H)
-	start_btn.position = Vector2.ZERO
-	var empty = StyleBoxEmpty.new()
-	start_btn.add_theme_stylebox_override("normal",  empty)
-	start_btn.add_theme_stylebox_override("hover",   empty)
-	start_btn.add_theme_stylebox_override("pressed", empty)
-	start_btn.add_theme_stylebox_override("focus",   empty)
-	start_btn.pressed.connect(_on_intro_start)
-	intro_layer.add_child(start_btn)
-
-	# コレクションボタン（上に重ねて優先取得）
-	var coll_btn = Button.new()
-	coll_btn.name = "CollBtn"
-	coll_btn.text = "📦 コレクション"
-	coll_btn.size     = Vector2(200, 44)
-	coll_btn.position = Vector2(W / 2.0 - 100, H - 122)
-	coll_btn.add_theme_font_size_override("font_size", 15)
-	coll_btn.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
-	var sbox = StyleBoxFlat.new()
-	sbox.bg_color = Color(0.08, 0.12, 0.22)
-	sbox.border_color = Color(0.4, 0.6, 1.0)
-	sbox.set_border_width_all(2)
-	sbox.set_corner_radius_all(8)
-	coll_btn.add_theme_stylebox_override("normal",  sbox)
-	coll_btn.add_theme_stylebox_override("hover",   sbox)
-	coll_btn.add_theme_stylebox_override("pressed", sbox)
-	coll_btn.pressed.connect(_open_collection)
-	intro_layer.add_child(coll_btn)
-
-func _show_intro() -> void:
-	game_state = "intro"
-	intro_layer.visible = true
-
-func _on_intro_start() -> void:
-	intro_layer.visible = false
-	wave_num = 1
-	_start_wave()
-
-func _build_drop_screen() -> void:
-	drop_layer = CanvasLayer.new()
-	drop_layer.layer = 3
-	drop_layer.visible = false
-	add_child(drop_layer)
-
-	var overlay = ColorRect.new()
-	overlay.color = Color(0, 0, 0, 0.78)
-	overlay.size  = Vector2(W, H)
-	drop_layer.add_child(overlay)
-
-	var get_lbl = Label.new()
-	get_lbl.text = "CARD GET !!"
-	get_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	get_lbl.size     = Vector2(W, 48)
-	get_lbl.position = Vector2(0, H * 0.15)
-	get_lbl.add_theme_font_size_override("font_size", 30)
-	get_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
-	drop_layer.add_child(get_lbl)
-
-	drop_card_bg = ColorRect.new()
-	drop_card_bg.size         = Vector2(220, 290)
-	drop_card_bg.position     = Vector2(W / 2.0 - 110, H * 0.28)
-	drop_card_bg.pivot_offset = drop_card_bg.size / 2.0
-	drop_layer.add_child(drop_card_bg)
-
-	drop_name_lbl = Label.new()
-	drop_name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	drop_name_lbl.size     = Vector2(200, 120)
-	drop_name_lbl.position = Vector2(W / 2.0 - 100, H * 0.28 + 80)
-	drop_name_lbl.add_theme_font_size_override("font_size", 26)
-	drop_layer.add_child(drop_name_lbl)
-
-	drop_rarity_lbl = Label.new()
-	drop_rarity_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	drop_rarity_lbl.size     = Vector2(200, 40)
-	drop_rarity_lbl.position = Vector2(W / 2.0 - 100, H * 0.28 + 210)
-	drop_rarity_lbl.add_theme_font_size_override("font_size", 22)
-	drop_layer.add_child(drop_rarity_lbl)
-
-	drop_tap_lbl = Label.new()
-	drop_tap_lbl.text = "▶  タップして続ける"
-	drop_tap_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	drop_tap_lbl.size     = Vector2(W, 36)
-	drop_tap_lbl.position = Vector2(0, H - 72)
-	drop_tap_lbl.add_theme_font_size_override("font_size", 18)
-	drop_tap_lbl.add_theme_color_override("font_color", Color(0.5, 0.9, 1.0))
-	drop_layer.add_child(drop_tap_lbl)
-
-	drop_flash = ColorRect.new()
-	drop_flash.color = Color(1, 1, 1, 0)
-	drop_flash.size  = Vector2(W, H)
-	drop_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	drop_layer.add_child(drop_flash)
-
-func _flash_screen(alpha: float, duration: float) -> void:
-	drop_flash.color.a = alpha
-	var tw := create_tween()
-	tw.tween_property(drop_flash, "color:a", 0.0, duration)
-
-func _make_star_polygon(r: float) -> PackedVector2Array:
-	var inner := r * 0.4
-	var pts := PackedVector2Array()
-	for i in range(10):
-		var a := float(i) / 10.0 * TAU - PI / 2.0
-		var d := r if i % 2 == 0 else inner
-		pts.append(Vector2(cos(a) * d, sin(a) * d))
-	return pts
-
-func _spawn_sparkle_burst(center: Vector2, count: int, rainbow: bool, color: Color) -> void:
-	var star_pts := _make_star_polygon(7.0)
-	for i in range(count):
-		var poly := Polygon2D.new()
-		poly.polygon  = star_pts
-		poly.color    = color
-		poly.position = center
-		drop_layer.add_child(poly)
-
-		var angle := randf_range(0.0, TAU)
-		var dist  := randf_range(60.0, 160.0)
-		var dest  := center + Vector2(cos(angle), sin(angle)) * dist
-		var dur   := randf_range(0.5, 0.8)
-
-		var tw := create_tween()
-		tw.set_parallel(true)
-		tw.tween_property(poly, "position", dest, dur).set_ease(Tween.EASE_OUT)
-		tw.tween_property(poly, "rotation", randf_range(-4.0, 4.0), dur)
-		tw.tween_property(poly, "modulate:a", 0.0, dur).set_delay(dur * 0.3)
-		if rainbow:
-			tw.tween_method(func(h): poly.color = Color.from_hsv(h, 0.8, 1.0), 0.0, 1.0, dur)
-		tw.chain().tween_callback(poly.queue_free)
-
-func _show_drop_screen(card: Dictionary) -> void:
-	GameData.add_card(card["id"])
-	var col    : Color = card["color"]
-	var rarity : int   = card["rarity"]
-	var base_pos := drop_card_bg.position
-	var center   := base_pos + drop_card_bg.size / 2.0
-
-	drop_card_bg.color    = Color(col.r * 0.25, col.g * 0.25, col.b * 0.25)
-	drop_name_lbl.text    = card["name"]
-	drop_name_lbl.add_theme_color_override("font_color", col)
-	drop_rarity_lbl.text  = _Cards.rarity_label(rarity)
-	drop_rarity_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1))
-
-	drop_layer.visible = true
-	game_state = "drop"
-	Sfx.play_card_get(rarity)
-
-	match rarity:
-		1:
-			_spawn_sparkle_burst(center, 3, false, Color(1.0, 1.0, 0.8))
-		2:
-			_flash_screen(0.5, 0.25)
-			_spawn_sparkle_burst(center, 7, false, Color(1.0, 0.85, 0.2))
-		3:
-			drop_card_bg.modulate.a   = 0.0
-			drop_name_lbl.modulate.a  = 0.0
-			drop_rarity_lbl.modulate.a = 0.0
-			_flash_screen(0.9, 0.4)
-			get_tree().create_timer(0.35).timeout.connect(func():
-				if not is_instance_valid(drop_card_bg): return
-				drop_card_bg.modulate.a   = 1.0
-				drop_name_lbl.modulate.a  = 1.0
-				drop_rarity_lbl.modulate.a = 1.0
-				_spawn_sparkle_burst(center, 16, true, Color(1.0, 0.3, 0.3))
-
-				var jt := create_tween()
-				for i in range(6):
-					var off := Vector2(randf_range(-5.0, 5.0), randf_range(-5.0, 5.0))
-					jt.tween_property(drop_card_bg, "position", base_pos + off, 1.0 / 30.0)
-				jt.tween_property(drop_card_bg, "position", base_pos, 1.0 / 30.0)
-
-				var pop := create_tween()
-				pop.tween_property(drop_card_bg, "scale", Vector2(1.12, 1.12), 0.12).from(Vector2(0.7, 0.7))
-				pop.tween_property(drop_card_bg, "scale", Vector2.ONE, 0.12)
-			)
-
-func _build_collection_screen() -> void:
-	coll_layer = CanvasLayer.new()
-	coll_layer.layer = 4
-	coll_layer.visible = false
-	add_child(coll_layer)
-
-	var bg = ColorRect.new()
-	bg.color = Color(0.04, 0.04, 0.10)
-	bg.size  = Vector2(W, H)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	coll_layer.add_child(bg)
-
-	var title = Label.new()
-	title.name = "CollTitle"
-	title.text = "コレクション"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size     = Vector2(W, 36)
-	title.position = Vector2(0, 16)
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
-	coll_layer.add_child(title)
-
-	var grid_root = Node2D.new()
-	grid_root.name = "GridRoot"
-	coll_layer.add_child(grid_root)
-
-	var back_lbl = Label.new()
-	back_lbl.text = "✕  閉じる"
-	back_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	back_lbl.size     = Vector2(W, 36)
-	back_lbl.position = Vector2(0, H - 60)
-	back_lbl.add_theme_font_size_override("font_size", 18)
-	back_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
-	coll_layer.add_child(back_lbl)
-
-func _refresh_collection() -> void:
-	if coll_layer == null: return
-	var grid_root = coll_layer.get_node("GridRoot")
-	for child in grid_root.get_children():
-		child.queue_free()
-
-	var all_cards = _Cards.get_all()
-	var cols      := 3
-	var cell_w    := (W - 16) / cols
-	var cell_h    := 90.0
-	var start_y   := 62.0
-
-	for i in range(all_cards.size()):
-		var card   = all_cards[i]
-		var col_i  = i % cols
-		var row_i  = i / cols
-		var cx     = 8 + col_i * cell_w
-		var cy     = start_y + row_i * cell_h
-		var owned  = GameData.has_card(card["id"])
-		var col : Color = card["color"] if owned else Color(0.2, 0.2, 0.22)
-
-		var cell_bg = ColorRect.new()
-		cell_bg.color    = Color(col.r * 0.2, col.g * 0.2, col.b * 0.2) if owned \
-		                   else Color(0.1, 0.1, 0.12)
-		cell_bg.size     = Vector2(cell_w - 6, cell_h - 6)
-		cell_bg.position = Vector2(cx, cy)
-		cell_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		grid_root.add_child(cell_bg)
-
-		var name_lbl = Label.new()
-		name_lbl.text = card["name"] if owned else "？？？"
-		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_lbl.size     = Vector2(cell_w - 6, 36)
-		name_lbl.position = Vector2(cx, cy + 8)
-		name_lbl.add_theme_font_size_override("font_size", 14)
-		name_lbl.add_theme_color_override("font_color", col)
-		grid_root.add_child(name_lbl)
-
-		var rar_lbl = Label.new()
-		rar_lbl.text = _Cards.rarity_label(card["rarity"]) if owned else "☆☆☆"
-		rar_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		rar_lbl.size     = Vector2(cell_w - 6, 24)
-		rar_lbl.position = Vector2(cx, cy + 50)
-		rar_lbl.add_theme_font_size_override("font_size", 12)
-		rar_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.1) if owned else Color(0.3, 0.3, 0.3))
-		grid_root.add_child(rar_lbl)
-
-		if owned and GameData.get_equipped(card["char_id"]) == card["id"]:
-			var eq_lbl = Label.new()
-			eq_lbl.text = "▶装備中"
-			eq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			eq_lbl.size     = Vector2(cell_w - 6, 18)
-			eq_lbl.position = Vector2(cx, cy + 68)
-			eq_lbl.add_theme_font_size_override("font_size", 10)
-			eq_lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.5))
-			grid_root.add_child(eq_lbl)
-
-	if jp_font:
-		_apply_font(grid_root, jp_font)
-
-func _open_collection() -> void:
-	_refresh_collection()
-	coll_layer.visible = true
-
-func _close_collection() -> void:
-	coll_layer.visible = false
-
-func _try_equip_at(tp: Vector2) -> void:
-	var cols_n  := 3
-	var cell_w  := (W - 16) / cols_n
-	var cell_h  := 90.0
-	var start_y := 62.0
-	var col_i   := int((tp.x - 8) / cell_w)
-	var row_i   := int((tp.y - start_y) / cell_h)
-	if col_i < 0 or col_i >= cols_n or row_i < 0: return
-	var idx  := row_i * cols_n + col_i
-	var all  : Array = _Cards.get_all()
-	if idx >= all.size(): return
-	var card : Dictionary = all[idx]
-	if not GameData.has_card(card["id"]): return
-	if GameData.get_equipped(card["char_id"]) == card["id"]:
-		GameData.equip_card(card["char_id"], "")   # はずす
-	else:
-		GameData.equip_card(card["char_id"], card["id"])
-	_refresh_collection()
-
-func _generate_wave(n: int) -> Array[Dictionary]:
-	var count := 2 + n
-	var hp    := 40 + n * 15
-	var enemies : Array[Dictionary] = []
-	for i in range(count):
-		enemies.append({"hp": hp, "max_hp": hp})
-	return enemies
-
-func _start_wave() -> void:
-	enemy_queue   = _generate_wave(wave_num)
-	_spawn_enemy_clusters()
-	mana          = {"fire": MANA_MAX, "thunder": MANA_MAX, "ice": MANA_MAX}
-	wave_start_sec  = Time.get_ticks_msec() / 1000.0
-	wave_active     = true
-	fio_frozen_sec  = 0.0; fio_freeze_start = -1.0
-	trace_pts       = []
-	active_touches.clear()
-	if fio_tween:   fio_tween.kill();   fio_tween = null
-	if guide_tween: guide_tween.kill(); guide_tween = null
-	fio_guide_r = TARGET_R
-	_clear_display()
-	wave_lbl.text = "WAVE %d / %d" % [wave_num, MAX_WAVES]
-	game_state = "idle"
-	_update_enemy_ui()
-	_update_mana_ui()
-	_on_element_chosen(character.get("element", "fire"))
-
-func _clear_display() -> void:
-	trace_line.clear_points()
-	result_lbl.text = ""; power_lbl.text = ""
-	hint_lbl.text = "Fill the shape!!"; hint_lbl.add_theme_color_override("font_color", Color(0.4, 0.4, 0.55))
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# パーティ管理
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _get_tech(ch: Dictionary) -> Dictionary:
-	var eq_id = GameData.get_equipped(ch["id"])
-	if eq_id != "":
-		var tech_id = eq_id.left(eq_id.rfind("_"))
-		for tech in ch["techniques"]:
-			if tech["id"] == tech_id:
-				return tech
-	return ch["techniques"][0]
-
-func _update_current_char() -> void:
-	character     = party[party_index]
-	current_shape = _get_tech(party[party_index])["shape"]
-	fio_guide_r   = TARGET_R
-	if fio_tween: fio_tween.kill(); fio_tween = null
-	sample_pts    = _Shapes.make_sample_pts(current_shape, tx, ty, TARGET_R)
-	_redraw_guide()
-	_apply_guide_style()
-	if character["id"] == "fio" and wave_active:
-		_start_fio_shrink()
-	_update_element_buttons()
-	var tech = _get_tech(party[party_index])
-	tech_lbl.text = character["emoji"] + " " + tech["name"]
-	tech_lbl.add_theme_color_override("font_color", character["color"])
-
-func _on_element_chosen(el: String) -> void:
-	if game_state != "idle": return
-	if mana.get(el, 0.0) < MANA_COST: return
-	for i in range(party.size()):
-		if party[i]["element"] == el:
-			party_index = i
-			break
-	_update_current_char()
-
-func _update_element_buttons() -> void:
-	for el in element_btns.keys():
-		var btn  : Button     = element_btns[el]
-		var ch   := _char_for_element(el)
-		var cur  : bool = character.get("element", "") == el
-		btn.disabled = float(mana.get(el, 0.0)) < MANA_COST
-		var sbox := StyleBoxFlat.new()
-		var base_a := 0.45 if cur else 0.25
-		sbox.bg_color = Color(ch["color"].r * base_a, ch["color"].g * base_a, ch["color"].b * base_a) \
-			if not btn.disabled else Color(0.12, 0.12, 0.14)
-		sbox.set_corner_radius_all(6)
-		if cur:
-			sbox.set_border_width_all(2)
-			sbox.border_color = ch["color"]
-		btn.add_theme_stylebox_override("normal",  sbox)
-		btn.add_theme_stylebox_override("hover",   sbox)
-		btn.add_theme_stylebox_override("pressed", sbox)
-		btn.add_theme_stylebox_override("disabled", sbox)
-
-func _update_mana_ui() -> void:
-	for el in mana_particles.keys():
-		var dots  : Array     = mana_particles[el]
-		var count := int(floor(clampf(mana[el] / MANA_MAX, 0.0, 1.0) * MANA_PARTICLE_MAX))
-		for i in range(dots.size()):
-			dots[i].visible = i < count
-	_update_element_buttons()
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ガイド描画・キャラ固有能力
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _redraw_guide(r: float = -1.0) -> void:
-	var rad := r if r > 0.0 else fio_guide_r if character.get("id") == "fio" else TARGET_R
-	var pts := _Shapes.make_guide_pts(current_shape, tx, ty, rad)
-	var col  : Color = character.get("color", Color(0.267, 0.667, 1.0))
-	guide_rail.points = pts; guide_rail.default_color = Color(col.r, col.g, col.b, 0.14)
-	guide_line.points = pts; guide_line.default_color = Color(col.r, col.g, col.b, 0.9)
-
-func _apply_guide_style() -> void:
-	if guide_tween: guide_tween.kill(); guide_tween = null
-	if character["id"] == "agi":
-		guide_line.modulate.a = 0.0; guide_rail.modulate.a = 0.0
-		round_start_sec = Time.get_ticks_msec() / 1000.0
-		guide_tween = create_tween()
-		guide_tween.tween_property(guide_line, "modulate:a", 1.0, 2.0).set_ease(Tween.EASE_IN)
-		guide_tween.parallel().tween_property(guide_rail, "modulate:a", 1.0, 2.0).set_ease(Tween.EASE_IN)
-	else:
-		guide_line.modulate.a = 1.0; guide_rail.modulate.a = 1.0
-
-func _start_fio_shrink() -> void:
-	if fio_tween: fio_tween.kill()
-	fio_guide_r = TARGET_R
-	fio_tween = create_tween()
-	fio_tween.tween_method(_on_fio_r_changed, TARGET_R, TARGET_R * 0.38, 8.5)
-	fio_tween.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_SINE)
-
-func _on_fio_r_changed(r: float) -> void:
-	fio_guide_r = r
-	if game_state in ["idle", "drawing", "drawn"]:
-		_redraw_guide(r)
-		if game_state == "drawing":
-			_update_trace_color()
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 入力
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _input(event: InputEvent) -> void:
-	var tapped : bool = (event is InputEventScreenTouch and event.pressed) or \
-	                     (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed)
-
-	if game_state == "wave_break":
-		return
-	if coll_layer != null and coll_layer.visible:
-		# emulate_touch_from_mouseでMouseButtonとScreenTouchが二重発火するため
-		# ScreenTouchのみを採用し、トグル操作が1タップで2回走るのを防ぐ
-		if event is InputEventScreenTouch and event.pressed:
-			var tp : Vector2 = event.position
-			if tp.y > H - 65:
-				_close_collection()
-			else:
-				_try_equip_at(tp)
-		return
-	if game_state == "intro":
-		return  # Buttonが処理するので_inputでは何もしない
-	if game_state == "result":
-		if tapped:
-			get_tree().reload_current_scene()
-		return
-	if game_state == "drop":
-		if tapped:
-			drop_layer.visible = false
-			get_tree().reload_current_scene()
-		return
-
-	if event is InputEventScreenTouch:
-		if event.pressed:
-			active_touches[event.index] = event.position
-			if active_touches.size() == 1 and event.index == 0:
-				_on_single_touch(event.position)
-			elif active_touches.size() >= 2:
-				_on_two_finger()
-		else:
-			active_touches.erase(event.index)
-			if active_touches.is_empty() and game_state == "drawing":
-				_end_drawing()
-	elif event is InputEventScreenDrag:
-		if event.index == 0:
-			if game_state == "drawing":
-				_add_point(event.position)
-			elif game_state == "drawn":
-				_resume_drawing(event.position)
-	elif event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT:
-			if mb.pressed:
-				_on_single_touch(mb.position)
-			else:
-				if game_state == "drawing": _end_drawing()
-		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
-			_on_two_finger()   # PC での2本指シミュレーション
-	elif event is InputEventMouseMotion:
-		if not active_touches.is_empty():
-			if game_state == "drawing":
-				_add_point(event.position)
-			elif game_state == "drawn":
-				_resume_drawing(event.position)
-
-func _pos_over_element_btn(pos: Vector2) -> bool:
-	for el in element_btns.keys():
-		var btn : Button = element_btns[el]
-		if Rect2(btn.position, btn.size).has_point(pos):
-			return true
-	return false
-
-func _on_single_touch(pos: Vector2) -> void:
-	match game_state:
-		"idle":
-			if _pos_over_element_btn(pos): return
-			_start_drawing(pos)
-		"drawing":
-			pass   # ドラッグは InputEventScreenDrag で処理
-		"drawn":
-			pass   # タッチダウン直後は2本指タップ確定との区別がつかないため、
-			       # ドラッグ(InputEventScreenDrag)が来てから_resume_drawing()する
-
-func _on_two_finger() -> void:
-	match game_state:
-		"drawing", "drawn":
-			_resolve_cast()
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 描画
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _start_drawing(pos: Vector2) -> void:
-	game_state    = "drawing"
-	trace_pts     = [pos]
-	draw_start_sec = Time.get_ticks_msec() / 1000.0
-	trace_line.clear_points()
-	trace_line.add_point(pos)
-	hint_lbl.text = ""
-	result_lbl.text = ""
-
-	if character["id"] == "fio":
-		_start_fio_shrink()
-
-	# サンプル点をフィオの現在半径でスナップ
-	var r := fio_guide_r if character["id"] == "fio" else TARGET_R
-	sample_pts = _Shapes.make_sample_pts(current_shape, tx, ty, r)
-
-	if character["id"] == "fio" and fio_freeze_start < 0.0:
-		fio_freeze_start = Time.get_ticks_msec() / 1000.0
-
-func _resume_drawing(pos: Vector2) -> void:
-	game_state = "drawing"
-	trace_pts.append(pos)
-	trace_line.add_point(pos)
-	_update_trace_color()
-	if character["id"] == "fio" and fio_freeze_start < 0.0:
-		fio_freeze_start = Time.get_ticks_msec() / 1000.0
-
-func _add_point(pos: Vector2) -> void:
-	trace_pts.append(pos)
-	trace_line.add_point(pos)
-	_update_trace_color()
-
-func _end_drawing() -> void:
-	if not (game_state == "drawing"): return
-	game_state = "drawn"
-	if character["id"] == "fio" and fio_freeze_start >= 0.0:
-		fio_frozen_sec   += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
-		fio_freeze_start  = -1.0
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# スコアリング
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func calc_coverage(pts: Array[Vector2], br: float) -> float:
-	if pts.is_empty() or sample_pts.is_empty(): return 0.0
-	var grid: Dictionary = {}
-	for tp in pts:
-		var gx := int(tp.x / br); var gy := int(tp.y / br)
-		for dx in [-1, 0, 1]:
-			for dy in [-1, 0, 1]:
-				grid[Vector2i(gx+dx, gy+dy)] = true
-	var covered := 0
-	for sp in sample_pts:
-		if grid.has(Vector2i(int(sp.x / br), int(sp.y / br))):
-			covered += 1
-	return float(covered) / float(sample_pts.size())
-
-func get_accuracy() -> int:
-	if trace_pts.size() < 3: return 0
-	return int(calc_coverage(trace_pts, character.get("brush_radius", 12.0)) * 100.0)
-
-func _update_trace_color() -> void:
-	var acc := get_accuracy()
-	var col: Color
-	if   acc >= 90: col = Color(1.0,  0.87, 0.0,  0.75)
-	elif acc >= 75: col = Color(0.27, 0.93, 0.67, 0.75)
-	elif acc >= 55: col = Color(0.27, 0.53, 1.0,  0.75)
-	elif acc >= 30: col = Color(0.67, 0.67, 0.67, 0.75)
-	else:           col = Color(1.0,  0.27, 0.27, 0.75)
-	trace_line.default_color = col
-
-	# FORBIDDENゲージ
-	if acc < 30 and trace_pts.size() > 10:
-		var risk := (30.0 - acc) / 30.0
-		hint_lbl.text = "⚠  F O R B I D D E N  ?"
-		hint_lbl.add_theme_color_override("font_color", Color(1.0, 0.27, 0.27, 0.5 + risk * 0.5))
-	else:
-		hint_lbl.text = ""
-
-func _score_drawing() -> Dictionary:
-	var br      := character.get("brush_radius", 12.0) as float
-	var acc     := int(calc_coverage(trace_pts, br) * 100.0)
-	var elapsed := maxf(Time.get_ticks_msec() / 1000.0 - draw_start_sec, 0.1)
-	var spd_cap := 3.0 if character["id"] == "agi" else 2.0
-	var spd     := clampf(3.0 / elapsed, 0.5, spd_cap)
-
-	# アギ：早描きボーナス（ガイドが出る前に描いた分）
-	var early_bonus := 1.0
-	if character["id"] == "agi":
-		var blind := maxf(0.0, 2.0 - (draw_start_sec - round_start_sec))
-		if blind > 0.0: early_bonus = 1.0 + (blind / 2.0) * 0.8
-
-	var rank: String; var color: Color; var damage: int
-	var rai_bonus := 1.2 if character["id"] == "rai" else 1.0
-	if   acc >= 90: rank="PERFECT!!"; color=Color(1.0,0.87,0.0);   damage=int(acc * spd * rai_bonus)
-	elif acc >= 75: rank="GREAT!";    color=Color(0.27,0.93,0.67); damage=int(acc * spd * 0.8)
-	elif acc >= 55: rank="GOOD";      color=Color(0.27,0.53,1.0);  damage=int(acc * spd * 0.5)
-	elif acc >= 30: rank="MISS...";   color=Color(0.67,0.67,0.67); damage=int(acc * spd * 0.2)
-	else:           rank="FAIL";      color=Color(0.33,0.33,0.33); damage=0
-
-	if early_bonus > 1.0: damage = int(damage * early_bonus)
-	return {"rank": rank, "color": color, "damage": damage, "accuracy": acc,
-	        "char": character, "tech": _get_tech(character)}
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 魔素タイマー
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _process(delta: float) -> void:
-	if not wave_active: return
-
-	for el in mana.keys():
-		mana[el] = minf(MANA_MAX, mana[el] + MANA_REGEN_PER_SEC * delta)
-	_update_mana_ui()
-	_update_enemy_cluster_positions(delta)
-
-func _enemy_reached_line(cluster: Dictionary) -> void:
-	var dmg := ENEMY_LINE_DAMAGE_BASE + wave_num * 5
-	player_hp = maxi(0, player_hp - dmg)
-	_update_player_hp_bar()
-	_show_float_text(W / 2.0, H - 60, "-%d" % dmg, Color(1.0, 0.27, 0.27), 36)
-	cluster["approach_start"] = Time.get_ticks_msec() / 1000.0 + ENEMY_HIT_COOLDOWN
-	if player_hp <= 0:
-		wave_active = false
-		get_tree().create_timer(0.8).timeout.connect(_player_defeated)
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 発動・敵
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _resolve_cast() -> void:
-	if character["id"] == "fio" and fio_freeze_start >= 0.0:
-		fio_frozen_sec += Time.get_ticks_msec() / 1000.0 - fio_freeze_start
-		fio_freeze_start = -1.0
-
-	if trace_pts.size() <= 10:
-		trace_pts = []; trace_line.clear_points()
-		game_state = "idle"
-		return
-
-	var sc      := _score_drawing()
-	var tech    : Dictionary = _get_tech(character)
-	var element : String     = character["element"]
-	var power_mult : float = float(mana.get(element, 0.0)) / MANA_MAX
-	mana[element] = maxf(0.0, mana[element] - MANA_COST)
-	_update_mana_ui()
-
-	trace_pts = []; trace_line.clear_points()
-	game_state = "idle"
-	result_lbl.text = sc["rank"]
-	result_lbl.add_theme_color_override("font_color", sc["color"])
-	get_tree().create_timer(0.5).timeout.connect(func():
-		if game_state == "idle": result_lbl.text = ""
-	)
-
-	match tech.get("effect"):
-		"heal":
-			if sc["accuracy"] >= 55:
-				var heal := int(tech.get("value", 30) * sc["accuracy"] / 100.0 * power_mult)
-				player_hp = mini(player_max_hp, player_hp + heal)
-				_update_player_hp_bar()
-				power_lbl.text = "+%d HP ✨" % heal
-				power_lbl.add_theme_color_override("font_color", Color(0.27, 1.0, 0.67))
-				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
-		"pushback":
-			if sc["accuracy"] >= 55:
-				var sec : float = float(tech.get("value", 4.0)) * power_mult
-				for cluster in enemy_clusters:
-					if cluster["appeared"]:
-						cluster["approach_start"] = (cluster["approach_start"] as float) + sec
-				power_lbl.text = "後退 +%.1fs ⏱" % sec
-				power_lbl.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
-				get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
-		_:
-			var dmg := int(sc["damage"] * power_mult)
-			power_lbl.text = "-%d" % dmg
-			power_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
-			get_tree().create_timer(0.5).timeout.connect(func(): power_lbl.text = "")
-			_damage_enemy(dmg)
-
-func _damage_enemy(dmg: int) -> void:
-	if enemy_queue.is_empty(): return
-	_show_float_text(tx, ty - TARGET_R - 20, "-%d" % dmg, Color(1.0, 0.87, 0.0), 48)
-	enemy_queue[0]["hp"] = maxi(0, enemy_queue[0]["hp"] - dmg)
-	Sfx.play_hit()
-	_camera_shake(5.0, 0.3)
-	_enemy_flinch()
-	if enemy_queue[0]["hp"] <= 0:
-		enemy_queue.pop_front()
-		_remove_front_enemy_cluster()
-		if enemy_queue.is_empty():
-			_wave_cleared()
-			return
-	else:
-		_update_front_cluster_hp_visual()
-	_update_enemy_ui()
-
-func _update_enemy_ui() -> void:
-	if enemy_queue.is_empty():
-		enemy_name_lbl.text = ""
-		return
-	enemy_name_lbl.text = "残り %d体" % enemy_queue.size()
-
-func _update_front_cluster_hp_visual() -> void:
-	if enemy_clusters.is_empty() or enemy_queue.is_empty(): return
-	var dots  : Array = enemy_clusters[0]["dots"]
-	var e     := enemy_queue[0]
-	var ratio := float(e["hp"]) / float(e["max_hp"])
-	var visible_n := int(ceil(ratio * dots.size()))
-	for i in range(dots.size()):
-		dots[i].visible = i < visible_n
-
-func _spawn_enemy_clusters() -> void:
-	for cluster in enemy_clusters:
-		for dot in (cluster["dots"] as Array):
-			dot.queue_free()
-	enemy_clusters.clear()
-	for i in range(enemy_queue.size()):
-		var n       := ENEMY_CLUSTER_N + (4 if i == 0 else 0)
-		var dots    : Array[Polygon2D] = []
-		var offsets : Array[Vector2]   = []
-		var phases  : Array[float]     = []
-		var col     := Color(0.85, 0.55, 1.0) if i == 0 else Color(0.55, 0.3, 0.7)
-		for j in range(n):
-			var dot := Polygon2D.new()
-			dot.polygon = _make_circle_polygon(randf_range(5.0, 9.0))
-			dot.color   = col
-			dot.visible = false
-			add_child(dot)
-			move_child(dot, guide_rail.get_index())
-			dots.append(dot)
-			offsets.append(Vector2(randf_range(-28.0, 28.0), randf_range(-18.0, 18.0)))
-			phases.append(randf_range(0.0, TAU))
-		enemy_clusters.append({
-			"pos": Vector2(tx, ENEMY_SPAWN_Y), "dots": dots,
-			"offsets": offsets, "phases": phases, "scale": 0.7 if i > 0 else 0.9,
-			"delay": i * 0.3, "appeared": false, "approach_start": 0.0
-		})
-
-func _remove_front_enemy_cluster() -> void:
-	if enemy_clusters.is_empty(): return
-	var cluster = enemy_clusters.pop_front()
-	for dot in (cluster["dots"] as Array):
-		dot.queue_free()
-	if not enemy_clusters.is_empty():
-		var front = enemy_clusters[0]
-		front["scale"] = 0.9
-		for dot in (front["dots"] as Array):
-			dot.color = Color(0.85, 0.55, 1.0)
-		_update_front_cluster_hp_visual()
-
-func _update_enemy_cluster_positions(delta: float) -> void:
-	if enemy_clusters.is_empty():
-		danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15)
-		danger_line.width = 3.0
-		return
-
-	var t           := clampf(delta * ENEMY_APPROACH_SMOOTH, 0.0, 1.0)
-	var time        := Time.get_ticks_msec() / 1000.0
-	var since_start := time - wave_start_sec
-	var spawn_pt    := Vector2(tx, ENEMY_SPAWN_Y)
-	var target_pt   := Vector2(tx, ty)
-	var max_raw     := 0.0
-
-	for idx in range(enemy_clusters.size()):
-		var cluster = enemy_clusters[idx]
-		if since_start < (cluster["delay"] as float):
-			continue   # まだ出現タイミングではない
-		if not (cluster["appeared"] as bool):
-			cluster["appeared"]      = true
-			cluster["approach_start"] = time
-			if idx == 0:
-				_update_front_cluster_hp_visual()
-			else:
-				for dot in (cluster["dots"] as Array):
-					dot.visible = true
-
-		# クラスター単位の接近サイクル（出発→危険ライン→ダメージ→後退して再接近）
-		var raw      := clampf((time - (cluster["approach_start"] as float)) / ENEMY_APPROACH_DURATION, 0.0, 1.0)
-		var progress := pow(raw, 0.55)   # 序盤から動きが分かるようイージング
-		max_raw = maxf(max_raw, raw)
-		if raw >= 1.0:
-			_enemy_reached_line(cluster)
-
-		var dest : Vector2 = spawn_pt.lerp(target_pt, progress)
-		cluster["pos"] = (cluster["pos"] as Vector2).lerp(dest, t)
-		var scl     : float = lerpf(cluster["scale"], (cluster["scale"] as float) * 4.0, progress)
-		var dots    : Array  = cluster["dots"]
-		var offsets : Array  = cluster["offsets"]
-		var phases  : Array  = cluster["phases"]
-		for j in range(dots.size()):
-			var wander := Vector2(sin(time * 1.3 + (phases[j] as float)), cos(time * 1.7 + (phases[j] as float))) * 4.0
-			dots[j].position = (cluster["pos"] as Vector2) + (offsets[j] as Vector2) * scl + wander
-			dots[j].scale    = Vector2.ONE * scl
-
-	# 危険ライン：一番接近している敵に応じて太く・濃く光る
-	danger_line.default_color = Color(1.0, 0.3, 0.3, 0.15 + max_raw * 0.6)
-	danger_line.width = 3.0 + max_raw * 6.0
-
-func _update_player_hp_bar() -> void:
-	var ratio := float(player_hp) / float(player_max_hp)
-	player_hp_fill.size.x = (W - 70) * ratio
-	player_hp_lbl.text = "%d / %d" % [player_hp, player_max_hp]
-	player_hp_fill.color = Color(1.000, 0.267, 0.267) if ratio < 0.3 else Color(0.267, 0.533, 1.000)
-
-func _wave_cleared() -> void:
-	wave_active = false
-	if wave_num >= MAX_WAVES:
-		_run_complete()
-		return
-	game_state = "wave_break"
-	result_lbl.text = "WAVE CLEAR!!"
-	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
-	get_tree().create_timer(1.0).timeout.connect(func():
-		result_lbl.text = ""
-		wave_num += 1
-		_start_wave()
-	)
-
-func _run_complete() -> void:
-	wave_active = false
-	game_state = "result"
-	result_lbl.text = "ALL WAVES CLEAR!!"
-	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.87, 0.0))
-	power_lbl.text = ""
-	hint_lbl.text = ""
-	get_tree().create_timer(1.2).timeout.connect(func():
-		var card = _Cards.roll_drop()
-		_show_drop_screen(card)
-	)
-
-func _player_defeated() -> void:
-	game_state = "result"
-	result_lbl.text = "DEFEATED..."
-	result_lbl.add_theme_color_override("font_color", Color(1.0, 0.27, 0.27))
-	power_lbl.text = "Tap to retry"
-	hint_lbl.text = ""
-	get_tree().create_timer(1.0).timeout.connect(func():
-		get_tree().reload_current_scene()
-	)
-
-func _any_touch_pressed() -> bool:
-	return not active_touches.is_empty()
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# エフェクト
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func _camera_shake(intensity: float, duration: float) -> void:
-	var steps := int(duration * 30)
-	var tw    := create_tween()
-	for i in range(steps):
-		var off := Vector2(randf_range(-intensity, intensity), randf_range(-intensity, intensity))
-		tw.tween_callback(func(): camera.offset = off)
-		tw.tween_interval(1.0 / 30.0)
-	tw.tween_callback(func(): camera.offset = Vector2.ZERO)
-
-func _enemy_flinch() -> void:
-	var tw = create_tween()
-	tw.tween_property(enemy_name_lbl, "scale", Vector2(1.3, 1.3), 0.08)
-	tw.tween_property(enemy_name_lbl, "scale", Vector2(1.0, 1.0), 0.08)
-
-func _show_float_text(x: float, y: float, text: String, color: Color, size: int) -> void:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.size = Vector2(200, size + 8)
-	lbl.position = Vector2(x - 100, y)
-	lbl.add_theme_font_size_override("font_size", size)
-	lbl.add_theme_color_override("font_color", color)
-	ui_layer.add_child(lbl)
-	var tw = create_tween()
-	tw.tween_property(lbl, "position:y", y - 90, 0.9).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(lbl, "modulate:a", 0.0, 0.9)
-	tw.tween_callback(lbl.queue_free)

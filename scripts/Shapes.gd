@@ -17,6 +17,15 @@ static func make_guide_pts(shape: String, cx: float, cy: float, r: float) -> Pac
 			for e in range(3):
 				for i in range(101):
 					pts.append(v[e].lerp(v[e + 1], float(i) / 100.0))
+		"square":
+			var v: Array[Vector2] = []
+			for i in range(4):
+				var a := float(i) / 4.0 * TAU - PI / 4.0
+				v.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
+			v.append(v[0])
+			for e in range(4):
+				for i in range(101):
+					pts.append(v[e].lerp(v[e + 1], float(i) / 100.0))
 		"star":
 			var inner := r * 0.4
 			var v: Array[Vector2] = []
