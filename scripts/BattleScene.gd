@@ -238,7 +238,7 @@ func _process(delta: float) -> void:
 
 func _update_player(delta: float) -> void:
 	if joy_vec.length_squared() > 0.01:
-		var spd := PLAYER_SPEED * weapon_stats["move_speed"]
+		var spd: float = PLAYER_SPEED * (weapon_stats["move_speed"] as float)
 		player_pos += joy_vec * spd * delta
 		player_pos.x = clampf(player_pos.x, PLAYER_R, W - PLAYER_R)
 		player_pos.y = clampf(player_pos.y, PLAYER_R, H - PLAYER_R)
@@ -611,7 +611,7 @@ func _nearest_enemy(from: Vector2) -> Dictionary:
 	var best : Dictionary = {}
 	var best_d := ATTACK_RANGE
 	for e in enemies:
-		var d := from.distance_to(e["pos"])
+		var d: float = from.distance_to(e["pos"] as Vector2)
 		if d < best_d:
 			best_d = d
 			best = e
