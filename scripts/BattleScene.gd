@@ -130,6 +130,12 @@ func _ready() -> void:
 
 	jp_font = load("res://fonts/jp_font.ttf")
 
+	var bg := ColorRect.new()
+	bg.color = Color(0.06, 0.06, 0.14)
+	bg.size = Vector2(W, H)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg)
+
 	_build_ui()
 	_build_draw_layer()
 	_build_player()
@@ -145,12 +151,6 @@ func _build_ui() -> void:
 	ui_layer = CanvasLayer.new()
 	ui_layer.layer = 10
 	add_child(ui_layer)
-
-	var bg = ColorRect.new()
-	bg.color = Color(0.06, 0.06, 0.14)
-	bg.size = Vector2(W, H)
-	ui_layer.add_child(bg)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	hp_lbl = _make_label("HP: 10", 16, Vector2(12, 12))
 	ui_layer.add_child(hp_lbl)
