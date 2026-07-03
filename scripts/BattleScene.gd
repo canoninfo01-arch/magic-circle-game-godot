@@ -35,8 +35,10 @@ const BULLET_SPEED     := 330.0
 const BULLET_RANGE     := 260.0
 const BULLET_R         := 5.0
 const BULLET_DMG_BASE  := 12
-const ATTACK_RANGE     := 220.0
-const ATTACK_INTERVAL  := 1.2
+const ATTACK_RANGE          := 220.0
+const ATTACK_INTERVAL       := 1.2
+const PLAYER_ATTACK_INTERVAL := 2.5
+const PLAYER_BULLET_DMG      := 6
 
 const DRAW_DURATION    := 8.0
 const DRAW_GUIDE_R     := 120.0
@@ -69,9 +71,10 @@ var elapsed_time  := 0.0
 var player_hp    := PLAYER_HP_MAX
 var player_pos   := Vector2.ZERO
 var player_node  : Polygon2D = null
-var joy_id       : int = -1
-var joy_origin   := Vector2.ZERO
-var joy_vec      := Vector2.ZERO
+var joy_id              : int   = -1
+var joy_origin          := Vector2.ZERO
+var joy_vec             := Vector2.ZERO
+var player_attack_timer : float = 0.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 仲間
@@ -236,6 +239,23 @@ func _update_player(delta: float) -> void:
 		player_pos.y = clampf(player_pos.y, PLAYER_R, H - PLAYER_R)
 	if player_node:
 		player_node.position = player_pos
+
+	player_attack_timer -= delta
+	if player_attack_timer <= 0.0:
+		player_attack_timer = PLAYER_ATTACK_INTERVAL
+		_player_shoot()
+
+func _player_shoot() -> void:
+	var nearest := _nearest_enemy(player_pos)
+	if not nearest.is_empty():
+		var dir: Vector2 = ((nearest["pos"] as Vector2) - player_pos).normalized()
+		_fire_bullet(player_pos, dir, PLAYER_BULLET_DMG)
+		_fire_bullet(player_pos, dir.rotated(PI * 0.5), PLAYER_BULLET_DMG)
+		_fire_bullet(player_pos, dir.rotated(-PI * 0.5), PLAYER_BULLET_DMG)
+	else:
+		for i in range(4):
+			var a: float = float(i) / 4.0 * TAU
+			_fire_bullet(player_pos, Vector2(cos(a), sin(a)), PLAYER_BULLET_DMG)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 敵
@@ -572,11 +592,24 @@ func _handle_draw_input(event: InputEvent) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _game_over() -> void:
 	game_state = "game_over"
-	var over_lbl := _make_label("GAME OVER\n%.0fs" % elapsed_time, 48, Vector2(W * 0.5 - 120, H * 0.4))
+
+	var over_lbl := _make_label("GAME OVER", 52, Vector2(W * 0.5 - 130, H * 0.35))
 	over_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 	ui_layer.add_child(over_lbl)
+
+	var score_lbl := _make_label("%.0f 秒生存" % elapsed_time, 28, Vector2(W * 0.5 - 70, H * 0.48))
+	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	ui_layer.add_child(score_lbl)
+
+	var retry_btn := Button.new()
+	retry_btn.text = "RETRY"
+	retry_btn.size = Vector2(180, 60)
+	retry_btn.position = Vector2(W * 0.5 - 90, H * 0.58)
+	retry_btn.pressed.connect(func(): get_tree().reload_current_scene())
 	if jp_font:
-		over_lbl.add_theme_font_override("font", jp_font)
+		retry_btn.add_theme_font_override("font", jp_font)
+	retry_btn.add_theme_font_size_override("font_size", 26)
+	ui_layer.add_child(retry_btn)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UI 更新
