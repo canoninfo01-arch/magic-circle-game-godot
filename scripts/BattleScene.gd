@@ -141,6 +141,7 @@ func _ready() -> void:
 	_build_ui()
 	_build_draw_layer()
 	_build_player()
+	_add_ally("triangle", 1)
 
 func _build_player() -> void:
 	player_node = Polygon2D.new()
