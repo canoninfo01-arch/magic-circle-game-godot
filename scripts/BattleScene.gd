@@ -20,11 +20,11 @@ const ALLY_MID_R       := 70.0
 const ALLY_INNER_R     := 38.0
 const ALLY_BASE_SIZE   := 14.0
 
-const ENEMY_SPAWN_BASE := 2.5
-const ENEMY_SPEED_BASE := 75.0
-const ENEMY_HP_BASE    := 30
-const ENEMY_R          := 14.0
-const ENEMY_DAMAGE     := 1
+const ENEMY_SPAWN_BASE: float = 2.5
+const ENEMY_SPEED_BASE: float = 75.0
+const ENEMY_HP_BASE:    int   = 30
+const ENEMY_R:          float = 14.0
+const ENEMY_DAMAGE:     int   = 1
 
 const ITEM_DROP_CHANCE := 0.35
 const CHAR_ITEM_RATIO  := 0.4
@@ -256,9 +256,9 @@ func _spawn_enemies(delta: float) -> void:
 	_spawn_one_enemy()
 
 func _spawn_one_enemy() -> void:
-	var pos := _random_edge_pos()
-	var hp := int(ENEMY_HP_BASE + elapsed_time * 0.8)
-	var spd := ENEMY_SPEED_BASE + elapsed_time * 0.5
+	var pos: Vector2 = _random_edge_pos()
+	var hp: int      = int(ENEMY_HP_BASE + elapsed_time * 0.8)
+	var spd: float   = ENEMY_SPEED_BASE + elapsed_time * 0.5
 
 	var node := Polygon2D.new()
 	node.polygon = _make_ngon(3, ENEMY_R)
@@ -272,13 +272,13 @@ func _update_enemies(delta: float) -> void:
 	var to_remove : Array[int] = []
 	for i in range(enemies.size()):
 		var e := enemies[i]
-		e["kb"] = e["kb"].lerp(Vector2.ZERO, delta * 5.0)
-		var dir := (player_pos - e["pos"]).normalized()
-		e["pos"] += dir * e["speed"] * delta + e["kb"] * delta
-		e["node"].position = e["pos"]
+		e["kb"] = (e["kb"] as Vector2).lerp(Vector2.ZERO, delta * 5.0)
+		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
+		e["pos"] = (e["pos"] as Vector2) + dir * (e["speed"] as float) * delta + (e["kb"] as Vector2) * delta
+		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
-		if e["pos"].distance_to(player_pos) < PLAYER_R + ENEMY_R:
+		if (e["pos"] as Vector2).distance_to(player_pos) < PLAYER_R + ENEMY_R:
 			player_hp -= ENEMY_DAMAGE
 			to_remove.append(i)
 			e["node"].queue_free()
@@ -290,9 +290,9 @@ func _update_enemies(delta: float) -> void:
 		# 仲間との衝突
 		var hit_ally : Dictionary = {}
 		for a in allies:
-			if e["pos"].distance_to(a["node"].position) < ALLY_BASE_SIZE + ENEMY_R:
-				var kb_dir := (e["pos"] - a["node"].position).normalized()
-				e["kb"] += kb_dir * 180.0
+			if (e["pos"] as Vector2).distance_to(a["node"].position) < ALLY_BASE_SIZE + ENEMY_R:
+				var kb_dir: Vector2 = ((e["pos"] as Vector2) - a["node"].position).normalized()
+				e["kb"] = (e["kb"] as Vector2) + kb_dir * 180.0
 				a["hp"] -= 8
 				hit_ally = a
 				break
@@ -321,41 +321,43 @@ func _update_allies(delta: float) -> void:
 	_position_ring(stars_a, ALLY_INNER_R, delta)
 
 	for a in allies:
-		a["attack_timer"] -= delta
-		if a["attack_timer"] <= 0.0:
+		a["attack_timer"] = (a["attack_timer"] as float) - delta
+		if (a["attack_timer"] as float) <= 0.0:
 			_ally_attack(a)
-			a["attack_timer"] = ATTACK_INTERVAL / weapon_stats["atk_speed"]
+			a["attack_timer"] = ATTACK_INTERVAL / (weapon_stats["atk_speed"] as float)
 
 func _position_ring(ring: Array[Dictionary], radius: float, delta: float) -> void:
 	if ring.is_empty(): return
 	for i in range(ring.size()):
 		var angle := float(i) / float(ring.size()) * TAU
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
-		var spd := SHAPE_DATA[ring[i]["shape"]]["speed_m"] * 300.0
-		var cur_pos : Vector2 = ring[i]["node"].position
-		ring[i]["node"].position = cur_pos.lerp(target, minf(1.0, delta * spd / cur_pos.distance_to(target) if cur_pos.distance_to(target) > 1.0 else 1.0))
+		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 300.0
+		var cur_pos: Vector2 = ring[i]["node"].position
+		var dist: float      = cur_pos.distance_to(target)
+		var t: float         = minf(1.0, delta * spd / dist) if dist > 1.0 else 1.0
+		ring[i]["node"].position = cur_pos.lerp(target, t)
 
 func _ally_attack(a: Dictionary) -> void:
-	var shape := a["shape"]
-	var bullet_count : int = SHAPE_DATA[shape]["bullets"] + weapon_stats["bullet_bonus"]
+	var shape: String    = a["shape"]
+	var bullet_count: int = (SHAPE_DATA[shape]["bullets"] as int) + (weapon_stats["bullet_bonus"] as int)
 	if bullet_count <= 0: return
 
-	var ally_pos : Vector2 = a["node"].position
+	var ally_pos: Vector2 = a["node"].position
 	var nearest := _nearest_enemy(ally_pos)
 	if nearest.is_empty(): return
 
-	var dmg := int(BULLET_DMG_BASE * weapon_stats["damage"])
-	var base_dir := (nearest["pos"] - ally_pos).normalized()
+	var dmg: int          = int(BULLET_DMG_BASE * (weapon_stats["damage"] as float))
+	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 
 	if shape == "star":
 		for i in range(bullet_count):
-			var angle := float(i) / float(bullet_count) * TAU
+			var angle: float = float(i) / float(bullet_count) * TAU
 			_fire_bullet(ally_pos, Vector2(cos(angle), sin(angle)), dmg)
 	else:
-		var spread := 0.15 * (bullet_count - 1)
+		var spread: float = 0.15 * (bullet_count - 1)
 		for i in range(bullet_count):
-			var offset := -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
-			var dir := base_dir.rotated(offset)
+			var offset: float = -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
+			var dir: Vector2  = base_dir.rotated(offset)
 			_fire_bullet(ally_pos, dir, dmg)
 
 func _fire_bullet(from: Vector2, dir: Vector2, dmg: int) -> void:
@@ -377,18 +379,18 @@ func _update_bullets(delta: float) -> void:
 	var to_remove : Array[int] = []
 	for i in range(bullets.size()):
 		var b := bullets[i]
-		b["pos"] += b["dir"] * BULLET_SPEED * delta
-		b["traveled"] += BULLET_SPEED * delta
-		b["node"].position = b["pos"]
+		b["pos"] = (b["pos"] as Vector2) + (b["dir"] as Vector2) * BULLET_SPEED * delta
+		b["traveled"] = (b["traveled"] as float) + BULLET_SPEED * delta
+		b["node"].position = b["pos"] as Vector2
 
 		var hit := false
 		for e in enemies:
-			if b["pos"].distance_to(e["pos"]) < ENEMY_R + BULLET_R:
+			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < ENEMY_R + BULLET_R:
 				e["hp"] -= b["dmg"]
 				hit = true
 				break
 
-		if hit or b["traveled"] >= BULLET_RANGE:
+		if hit or (b["traveled"] as float) >= BULLET_RANGE:
 			b["node"].queue_free()
 			to_remove.append(i)
 
@@ -405,7 +407,7 @@ func _update_bullets(delta: float) -> void:
 
 func _on_enemy_death(e: Dictionary) -> void:
 	if randf() < ITEM_DROP_CHANCE:
-		_spawn_item(e["pos"])
+		_spawn_item(e["pos"] as Vector2)
 	e["node"].queue_free()
 	enemies.erase(e)
 
@@ -434,7 +436,7 @@ func _update_items() -> void:
 	var to_remove : Array[int] = []
 	for i in range(items.size()):
 		var it := items[i]
-		if player_pos.distance_to(it["pos"]) < ITEM_PICKUP_R + PLAYER_R:
+		if player_pos.distance_to(it["pos"] as Vector2) < ITEM_PICKUP_R + PLAYER_R:
 			if it["type"] == "weapon":
 				_apply_weapon(it["subtype"])
 				it["node"].queue_free()
@@ -449,10 +451,10 @@ func _update_items() -> void:
 
 func _apply_weapon(subtype: String) -> void:
 	match subtype:
-		"atk_speed":    weapon_stats["atk_speed"]   += 0.2
-		"damage":       weapon_stats["damage"]       += 0.3
-		"move_speed":   weapon_stats["move_speed"]   += 0.15
-		"bullet_bonus": weapon_stats["bullet_bonus"] += 1
+		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
+		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
+		"move_speed":   weapon_stats["move_speed"]   = (weapon_stats["move_speed"]   as float) + 0.15
+		"bullet_bonus": weapon_stats["bullet_bonus"] = (weapon_stats["bullet_bonus"] as int)   + 1
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
@@ -507,10 +509,10 @@ func _end_drawing() -> void:
 	_add_ally(draw_shape, coating_count)
 
 func _add_ally(shape: String, coating: int) -> void:
-	var data := SHAPE_DATA[shape]
-	var hp_base : int = data["hp_base"]
-	var hp := hp_base + coating * 20
-	var kb_r : float = data["kb_r"]
+	var data: Dictionary = SHAPE_DATA[shape]
+	var hp_base: int     = data["hp_base"]
+	var hp: int          = hp_base + coating * 20
+	var kb_r: float      = data["kb_r"]
 
 	if allies.size() >= MAX_ALLIES:
 		var worst := _most_damaged_ally()
@@ -550,12 +552,14 @@ func _handle_joystick(event: InputEvent) -> void:
 			joy_id = -1
 			joy_vec = Vector2.ZERO
 	elif event is InputEventScreenDrag:
-		if event.index == joy_id:
-			var delta_v := event.position - joy_origin
+		var drag := event as InputEventScreenDrag
+		if drag.index == joy_id:
+			var delta_v: Vector2 = drag.position - joy_origin
 			if delta_v.length() > 10.0:
 				joy_vec = delta_v.normalized()
 			else:
 				joy_vec = Vector2.ZERO
+
 
 func _handle_draw_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -614,18 +618,18 @@ func _nearest_enemy(from: Vector2) -> Dictionary:
 	return best  # 空dictの場合は呼び出し元で .is_empty() チェック
 
 func _most_damaged_ally() -> Dictionary:
-	var worst : Dictionary = {}
-	var worst_ratio := 2.0
+	var worst: Dictionary = {}
+	var worst_ratio: float = 2.0
 	for a in allies:
-		var ratio := float(a["hp"]) / float(a["max_hp"])
+		var ratio: float = float(a["hp"] as int) / float(a["max_hp"] as int)
 		if ratio < worst_ratio:
 			worst_ratio = ratio
 			worst = a
 	return worst
 
 func _ally_color(shape: String, coating: int) -> Color:
-	var base : Color = SHAPE_DATA[shape]["color"]
-	var brightness := 0.5 + minf(0.5, float(coating) * 0.12)
+	var base: Color     = SHAPE_DATA[shape]["color"]
+	var brightness: float = 0.5 + minf(0.5, float(coating) * 0.12)
 	return base * brightness
 
 func _ally_size(coating: int) -> float:
