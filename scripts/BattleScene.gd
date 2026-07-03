@@ -3,6 +3,12 @@ extends Node2D
 const _Shapes = preload("res://scripts/Shapes.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 画面サイズ（project.godot 固定値を直接参照）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const W := 390.0
+const H := 844.0
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const PLAYER_SPEED     := 220.0
@@ -47,9 +53,8 @@ const SHAPE_DATA := {
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 画面
+# フォント
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var W: float; var H: float
 var jp_font: Font = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -123,18 +128,24 @@ var ally_lbl      : Label       = null
 # 初期化
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _ready() -> void:
-	await get_tree().process_frame
-	var sz = get_viewport_rect().size
-	W = sz.x; H = sz.y
 	player_pos = Vector2(W * 0.5, H * 0.6)
-
 	jp_font = load("res://fonts/jp_font.ttf")
 
+	# カメラ（旧コードに倣い make_current してビューを確定させる）
+	var cam := Camera2D.new()
+	cam.position = Vector2(W * 0.5, H * 0.5)
+	add_child(cam)
+	cam.make_current()
+
+	# 背景は CanvasLayer layer=0 に入れると確実に描画される
+	var bg_layer := CanvasLayer.new()
+	bg_layer.layer = 0
+	add_child(bg_layer)
 	var bg := ColorRect.new()
 	bg.color = Color(0.06, 0.06, 0.14)
 	bg.size = Vector2(W, H)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	bg_layer.add_child(bg)
 
 	_build_ui()
 	_build_draw_layer()
@@ -277,15 +288,16 @@ func _update_enemies(delta: float) -> void:
 			continue
 
 		# 仲間との衝突
+		var hit_ally : Dictionary = {}
 		for a in allies:
 			if e["pos"].distance_to(a["node"].position) < ALLY_BASE_SIZE + ENEMY_R:
 				var kb_dir := (e["pos"] - a["node"].position).normalized()
-				var kb_r := a.get("kb_resist", 0.5)
 				e["kb"] += kb_dir * 180.0
 				a["hp"] -= 8
-				if a["hp"] <= 0:
-					_remove_ally(a)
+				hit_ally = a
 				break
+		if not hit_ally.is_empty() and hit_ally["hp"] <= 0:
+			_remove_ally(hit_ally)
 
 	for i in range(to_remove.size() - 1, -1, -1):
 		enemies.remove_at(to_remove[i])
@@ -330,7 +342,7 @@ func _ally_attack(a: Dictionary) -> void:
 
 	var ally_pos : Vector2 = a["node"].position
 	var nearest := _nearest_enemy(ally_pos)
-	if nearest == null: return
+	if nearest.is_empty(): return
 
 	var dmg := int(BULLET_DMG_BASE * weapon_stats["damage"])
 	var base_dir := (nearest["pos"] - ally_pos).normalized()
@@ -373,8 +385,6 @@ func _update_bullets(delta: float) -> void:
 		for e in enemies:
 			if b["pos"].distance_to(e["pos"]) < ENEMY_R + BULLET_R:
 				e["hp"] -= b["dmg"]
-				if e["hp"] <= 0:
-					_on_enemy_death(e)
 				hit = true
 				break
 
@@ -384,6 +394,14 @@ func _update_bullets(delta: float) -> void:
 
 	for i in range(to_remove.size() - 1, -1, -1):
 		bullets.remove_at(to_remove[i])
+
+	# 死亡した敵をまとめて処理（ループ外でerase）
+	var dead : Array[Dictionary] = []
+	for e in enemies:
+		if e["hp"] <= 0:
+			dead.append(e)
+	for e in dead:
+		_on_enemy_death(e)
 
 func _on_enemy_death(e: Dictionary) -> void:
 	if randf() < ITEM_DROP_CHANCE:
@@ -496,7 +514,7 @@ func _add_ally(shape: String, coating: int) -> void:
 
 	if allies.size() >= MAX_ALLIES:
 		var worst := _most_damaged_ally()
-		if worst != null:
+		if not worst.is_empty():
 			_remove_ally(worst)
 
 	var col := _ally_color(shape, coating)
@@ -593,7 +611,7 @@ func _nearest_enemy(from: Vector2) -> Dictionary:
 		if d < best_d:
 			best_d = d
 			best = e
-	return best
+	return best  # 空dictの場合は呼び出し元で .is_empty() チェック
 
 func _most_damaged_ally() -> Dictionary:
 	var worst : Dictionary = {}
