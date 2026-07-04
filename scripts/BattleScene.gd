@@ -13,7 +13,7 @@ const H := 844.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const PLAYER_SPEED     := 220.0
 const PLAYER_HP_MAX    := 10
-const PLAYER_R         := 18.0
+const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
 const ALLY_OUTER_R     := 110.0
 const ALLY_MID_R       := 70.0
@@ -31,14 +31,14 @@ const CHAR_ITEM_RATIO  := 0.4
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 
-const BULLET_SPEED     := 330.0
-const BULLET_RANGE     := 260.0
-const BULLET_R         := 5.0
-const BULLET_DMG_BASE  := 12
-const ATTACK_RANGE          := 220.0
-const ATTACK_INTERVAL       := 1.2
-const PLAYER_ATTACK_INTERVAL := 2.5
-const PLAYER_BULLET_DMG      := 6
+const BULLET_SPEED     := 370.0
+const BULLET_RANGE     := 280.0
+const BULLET_R         := 4.0
+const BULLET_DMG_BASE  := 5
+const ATTACK_RANGE          := 240.0
+const ATTACK_INTERVAL       := 0.7
+const PLAYER_ATTACK_INTERVAL := 1.2
+const PLAYER_BULLET_DMG      := 4
 
 const DRAW_DURATION    := 8.0
 const DRAW_GUIDE_R     := 120.0
@@ -328,9 +328,9 @@ func _update_allies(delta: float) -> void:
 			"triangle", "square": mids.append(a)
 			"star":     stars_a.append(a)
 
-	_position_ring(circles, ALLY_OUTER_R, delta)
-	_position_ring(mids,    ALLY_MID_R,   delta)
-	_position_ring(stars_a, ALLY_INNER_R, delta)
+	_position_ring(circles, ALLY_OUTER_R, delta, 0.0)
+	_position_ring(mids,    ALLY_MID_R,   delta, PI / 3.0)
+	_position_ring(stars_a, ALLY_INNER_R, delta, PI * 2.0 / 3.0)
 
 	for a in allies:
 		a["attack_timer"] = (a["attack_timer"] as float) - delta
@@ -338,10 +338,10 @@ func _update_allies(delta: float) -> void:
 			_ally_attack(a)
 			a["attack_timer"] = ATTACK_INTERVAL / (weapon_stats["atk_speed"] as float)
 
-func _position_ring(ring: Array[Dictionary], radius: float, delta: float) -> void:
+func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_offset: float = 0.0) -> void:
 	if ring.is_empty(): return
 	for i in range(ring.size()):
-		var angle := float(i) / float(ring.size()) * TAU
+		var angle: float = float(i) / float(ring.size()) * TAU + angle_offset
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
 		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 300.0
 		var cur_pos: Vector2 = ring[i]["node"].position
