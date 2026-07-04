@@ -653,12 +653,16 @@ func _most_damaged_ally() -> Dictionary:
 	return worst
 
 func _ally_color(shape: String, coating: int) -> Color:
-	var base: Color     = SHAPE_DATA[shape]["color"]
-	var brightness: float = 0.5 + minf(0.5, float(coating) * 0.12)
-	return base * brightness
+	var base: Color       = SHAPE_DATA[shape]["color"]
+	var brightness: float = 0.35 + minf(0.65, float(coating) * 0.18)
+	var col := base * brightness
+	# 最大近くは白く光る（白成分を混ぜる）
+	if coating >= 4:
+		col = col.lerp(Color.WHITE, minf(0.4, float(coating - 3) * 0.1))
+	return col
 
-func _ally_size(coating: int) -> float:
-	return ALLY_BASE_SIZE + minf(10.0, float(coating) * 2.0)
+func _ally_size(_coating: int) -> float:
+	return ALLY_BASE_SIZE
 
 func _random_edge_pos() -> Vector2:
 	var edge := randi() % 4
