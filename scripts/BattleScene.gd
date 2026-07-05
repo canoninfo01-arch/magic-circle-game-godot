@@ -15,9 +15,9 @@ const PLAYER_SPEED     := 220.0
 const PLAYER_HP_MAX    := 10
 const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
-const ALLY_OUTER_R     := 110.0
-const ALLY_MID_R       := 70.0
-const ALLY_INNER_R     := 38.0
+const ALLY_OUTER_R     := 68.0
+const ALLY_MID_R       := 46.0
+const ALLY_INNER_R     := 26.0
 const ALLY_BASE_SIZE   := 14.0
 
 const ENEMY_SPAWN_BASE: float = 2.5
@@ -117,6 +117,7 @@ var trace_line    : Line2D      = null
 var guide_line    : Line2D      = null
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
+var cov_lbl       : Label       = null
 var shape_btn_row : Array[Button] = []
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -180,20 +181,24 @@ func _build_draw_layer() -> void:
 	draw_layer.add_child(dim)
 
 	guide_line = Line2D.new()
-	guide_line.width = 2.0
-	guide_line.default_color = Color(1.0, 1.0, 1.0, 0.35)
+	guide_line.width = 6.0
+	guide_line.default_color = Color(1.0, 1.0, 1.0, 0.65)
 	draw_layer.add_child(guide_line)
 
 	trace_line = Line2D.new()
-	trace_line.width = 4.0
+	trace_line.width = 5.0
 	trace_line.default_color = Color(0.4, 0.9, 1.0)
 	draw_layer.add_child(trace_line)
 
-	draw_timer_lbl = _make_label("8.0", 32, Vector2(W * 0.5 - 20, H * 0.12))
+	draw_timer_lbl = _make_label("8.0", 36, Vector2(W * 0.5 - 28, H * 0.08))
 	draw_timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	draw_layer.add_child(draw_timer_lbl)
 
-	coating_lbl = _make_label("×0", 42, Vector2(W * 0.5 - 24, H * 0.78))
+	cov_lbl = _make_label("0%", 22, Vector2(W * 0.5 - 20, H * 0.76))
+	cov_lbl.add_theme_color_override("font_color", Color(0.7, 1.0, 0.7))
+	draw_layer.add_child(cov_lbl)
+
+	coating_lbl = _make_label("×0", 44, Vector2(W * 0.5 - 28, H * 0.81))
 	coating_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
 	draw_layer.add_child(coating_lbl)
 
@@ -499,6 +504,13 @@ func _refresh_draw_guide() -> void:
 	guide_line.clear_points()
 	for p in guide_pts:
 		guide_line.add_point(p)
+	var shape_colors := {
+		"circle": Color(0.5, 0.7, 1.0, 0.8),
+		"triangle": Color(1.0, 0.5, 0.5, 0.8),
+		"square": Color(0.4, 1.0, 0.6, 0.8),
+		"star": Color(1.0, 0.9, 0.3, 0.8),
+	}
+	guide_line.default_color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
 
 func _update_drawing(delta: float) -> void:
 	draw_timer -= delta
@@ -506,11 +518,15 @@ func _update_drawing(delta: float) -> void:
 
 	if not trace_pts.is_empty() and sample_pts.size() > 0:
 		var cov := _calc_coverage(trace_pts, sample_pts)
+		cov_lbl.text = "%d%%" % int(cov * 100)
 		if cov >= DRAW_COVER_THR:
 			coating_count += 1
 			coating_lbl.text = "×%d" % coating_count
 			trace_pts.clear()
 			trace_line.clear_points()
+			cov_lbl.text = "0%"
+	else:
+		cov_lbl.text = "0%"
 
 	if draw_timer <= 0.0:
 		_end_drawing()
@@ -577,8 +593,7 @@ func _handle_draw_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and draw_touch_id == -1:
 			draw_touch_id = event.index
-			trace_pts.clear()
-			trace_line.clear_points()
+			# 指を離して再タッチしても進捗を引き継ぐ（リセットしない）
 			trace_pts.append(event.position)
 			trace_line.add_point(event.position)
 		elif not event.pressed and event.index == draw_touch_id:
