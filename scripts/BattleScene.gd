@@ -108,6 +108,7 @@ var items : Array[Dictionary] = []
 var draw_shape       := "circle"
 var draw_timer       := 0.0
 var coating_count    := 0
+var coating_power    := 0
 var trace_pts        : Array[Vector2] = []
 var sample_pts       : Array[Vector2] = []
 var draw_touch_id    : int = -1
@@ -115,6 +116,7 @@ var draw_touch_id    : int = -1
 var draw_layer    : CanvasLayer = null
 var trace_line    : Line2D      = null
 var guide_line    : Line2D      = null
+var guide_glow    : Line2D      = null
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
@@ -179,6 +181,11 @@ func _build_draw_layer() -> void:
 	dim.size = Vector2(W, H)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	draw_layer.add_child(dim)
+
+	guide_glow = Line2D.new()
+	guide_glow.width = 22.0
+	guide_glow.default_color = Color(1.0, 1.0, 1.0, 0.15)
+	draw_layer.add_child(guide_glow)
 
 	guide_line = Line2D.new()
 	guide_line.width = 6.0
@@ -481,8 +488,10 @@ func _start_drawing(suggested_shape: String) -> void:
 	draw_shape = suggested_shape
 	draw_timer = DRAW_DURATION
 	coating_count = 0
+	coating_power = 0
 	trace_pts.clear()
 	trace_line.clear_points()
+	trace_line.modulate = Color.WHITE
 	draw_touch_id = -1
 	_refresh_draw_guide()
 	draw_layer.visible = true
@@ -492,7 +501,9 @@ func _on_shape_btn(shape: String) -> void:
 	draw_shape = shape
 	trace_pts.clear()
 	trace_line.clear_points()
+	trace_line.modulate = Color.WHITE
 	coating_count = 0
+	coating_power = 0
 	coating_lbl.text = "×0"
 	_refresh_draw_guide()
 
@@ -502,15 +513,19 @@ func _refresh_draw_guide() -> void:
 	sample_pts = _Shapes.make_sample_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
 	var guide_pts := _Shapes.make_guide_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
 	guide_line.clear_points()
+	guide_glow.clear_points()
 	for p in guide_pts:
 		guide_line.add_point(p)
+		guide_glow.add_point(p)
 	var shape_colors := {
-		"circle": Color(0.5, 0.7, 1.0, 0.8),
+		"circle":   Color(0.5, 0.7, 1.0, 0.8),
 		"triangle": Color(1.0, 0.5, 0.5, 0.8),
-		"square": Color(0.4, 1.0, 0.6, 0.8),
-		"star": Color(1.0, 0.9, 0.3, 0.8),
+		"square":   Color(0.4, 1.0, 0.6, 0.8),
+		"star":     Color(1.0, 0.9, 0.3, 0.8),
 	}
-	guide_line.default_color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
+	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
+	guide_line.default_color = sc
+	guide_glow.default_color = Color(sc.r, sc.g, sc.b, 0.18)
 
 func _update_drawing(delta: float) -> void:
 	draw_timer -= delta
@@ -519,27 +534,29 @@ func _update_drawing(delta: float) -> void:
 	if not trace_pts.is_empty() and sample_pts.size() > 0:
 		var cov := _calc_coverage(trace_pts, sample_pts)
 		cov_lbl.text = "%d%%" % int(cov * 100)
-		if cov >= DRAW_COVER_THR:
-			coating_count += 1
-			coating_lbl.text = "×%d" % coating_count
-			trace_pts.clear()
-			trace_line.clear_points()
-			cov_lbl.text = "0%"
+		trace_line.modulate = _cov_color(cov)
 	else:
 		cov_lbl.text = "0%"
 
 	if draw_timer <= 0.0:
 		_end_drawing()
 
+func _cov_color(cov: float) -> Color:
+	if cov >= 0.90: return Color(1.0, 1.0, 0.3)   # 黄：PERFECT
+	if cov >= 0.75: return Color(0.4, 1.0, 0.9)   # シアン：GREAT
+	if cov >= 0.55: return Color(0.4, 0.6, 1.0)   # 青：まあまあ
+	if cov >= 0.30: return Color(1.0, 0.65, 0.3)  # 橙：微妙
+	return Color(1.0, 0.4, 0.4)                   # 赤：ずれてる
+
 func _end_drawing() -> void:
 	draw_layer.visible = false
 	game_state = "battle"
-	_add_ally(draw_shape, coating_count)
+	_add_ally(draw_shape, coating_power)
 
-func _add_ally(shape: String, coating: int) -> void:
+func _add_ally(shape: String, power: int) -> void:
 	var data: Dictionary = SHAPE_DATA[shape]
 	var hp_base: int     = data["hp_base"]
-	var hp: int          = hp_base + coating * 20
+	var hp: int          = hp_base + power
 	var kb_r: float      = data["kb_r"]
 
 	if allies.size() >= MAX_ALLIES:
@@ -547,8 +564,8 @@ func _add_ally(shape: String, coating: int) -> void:
 		if not worst.is_empty():
 			_remove_ally(worst)
 
-	var col := _ally_color(shape, coating)
-	var sz  := _ally_size(coating)
+	var col := _ally_color(shape, power)
+	var sz  := _ally_size(power)
 	var node := Polygon2D.new()
 	node.polygon = _make_shape_polygon(shape, sz)
 	node.color = col
@@ -556,7 +573,7 @@ func _add_ally(shape: String, coating: int) -> void:
 	add_child(node)
 
 	allies.append({
-		"shape": shape, "hp": hp, "max_hp": hp, "coating": coating,
+		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
 		"kb_resist": kb_r
 	})
@@ -593,14 +610,50 @@ func _handle_draw_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and draw_touch_id == -1:
 			draw_touch_id = event.index
-			# 指を離して再タッチしても進捗を引き継ぐ（リセットしない）
 			trace_pts.append(event.position)
 			trace_line.add_point(event.position)
 		elif not event.pressed and event.index == draw_touch_id:
 			draw_touch_id = -1
+			_evaluate_lap()
 	elif event is InputEventScreenDrag and event.index == draw_touch_id:
 		trace_pts.append(event.position)
 		trace_line.add_point(event.position)
+
+func _evaluate_lap() -> void:
+	if trace_pts.is_empty() or sample_pts.is_empty(): return
+	var cov := _calc_coverage(trace_pts, sample_pts)
+	trace_pts.clear()
+	trace_line.clear_points()
+	trace_line.modulate = Color.WHITE
+	cov_lbl.text = "0%"
+
+	var gain := 0
+	var label := ""
+	var col := Color.WHITE
+	if cov >= 0.90:
+		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3)
+	elif cov >= 0.75:
+		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9)
+	elif cov >= 0.70:
+		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0)
+	else:
+		label = "MISS..."; col = Color(0.8, 0.4, 0.4)
+
+	if gain > 0:
+		coating_count += 1
+		coating_power += gain
+		coating_lbl.text = "×%d" % coating_count
+	_show_lap_flash(label, col)
+
+func _show_lap_flash(label: String, col: Color) -> void:
+	var lbl := _make_label(label, 40, Vector2(W * 0.5 - 80, H * 0.5 - 30))
+	lbl.add_theme_color_override("font_color", col)
+	if jp_font:
+		lbl.add_theme_font_override("font", jp_font)
+	draw_layer.add_child(lbl)
+	var tween := create_tween()
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.7)
+	tween.tween_callback(lbl.queue_free)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲームオーバー
