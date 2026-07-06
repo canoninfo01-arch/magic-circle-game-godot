@@ -325,9 +325,11 @@ func _update_enemies(delta: float) -> void:
 		# プレイヤーとの衝突
 		if (e["pos"] as Vector2).distance_to(player_pos) < PLAYER_R + ENEMY_R:
 			player_hp -= ENEMY_DAMAGE
+			Sfx.play_damage()
 			to_remove.append(i)
 			e["node"].queue_free()
 			if player_hp <= 0:
+				Sfx.play_game_over()
 				_game_over()
 				return
 			continue
@@ -390,6 +392,7 @@ func _ally_attack(a: Dictionary) -> void:
 	var ally_pos: Vector2 = a["node"].position
 	var nearest := _nearest_enemy(ally_pos)
 	if nearest.is_empty(): return
+	Sfx.play_shoot()
 
 	var dmg: int          = int(BULLET_DMG_BASE * (weapon_stats["damage"] as float))
 	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
@@ -451,6 +454,7 @@ func _update_bullets(delta: float) -> void:
 		_on_enemy_death(e)
 
 func _on_enemy_death(e: Dictionary) -> void:
+	Sfx.play_enemy_die()
 	if randf() < ITEM_DROP_CHANCE:
 		_spawn_item(e["pos"] as Vector2)
 	e["node"].queue_free()
@@ -484,9 +488,11 @@ func _update_items() -> void:
 		if player_pos.distance_to(it["pos"] as Vector2) < ITEM_PICKUP_R + PLAYER_R:
 			if it["type"] == "weapon":
 				_apply_weapon(it["subtype"])
+				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
 			elif it["type"] == "char":
+				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
 				_start_drawing(it["subtype"])
@@ -619,6 +625,7 @@ func _try_merge() -> bool:
 			var evolved: String = EVOLVE_MAP[shape] as String
 			_spawn_ally_at(evolved, merged_power, merge_pos)
 			_show_evolve_flash(evolved, merge_pos)
+			Sfx.play_evolve()
 			return true
 	return false
 
@@ -682,15 +689,17 @@ func _evaluate_lap() -> void:
 	var gain := 0
 	var label := ""
 	var col := Color.WHITE
+	var grade := ""
 	if cov >= 0.90:
-		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3)
+		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"
 	elif cov >= 0.75:
-		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9)
+		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great"
 	elif cov >= 0.70:
-		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0)
+		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good"
 	else:
-		label = "MISS..."; col = Color(0.8, 0.4, 0.4)
+		label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
 
+	Sfx.play_lap(grade)
 	if gain > 0:
 		coating_count += 1
 		coating_power += gain
