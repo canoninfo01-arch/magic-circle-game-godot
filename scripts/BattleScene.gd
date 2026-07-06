@@ -48,10 +48,23 @@ const DRAW_BRUSH_R     := 18.0
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
 
 const SHAPE_DATA := {
-	"circle":   { "color": Color(0.25, 0.55, 1.0),  "bullets": 0, "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80 },
-	"triangle": { "color": Color(1.0,  0.3,  0.3),  "bullets": 3, "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35 },
-	"square":   { "color": Color(0.3,  1.0,  0.45), "bullets": 4, "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55 },
-	"star":     { "color": Color(1.0,  0.85, 0.1),  "bullets": 5, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25 },
+	"circle":        { "color": Color(0.25, 0.55, 1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
+	"triangle":      { "color": Color(1.0,  0.3,  0.3),  "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
+	"square":        { "color": Color(0.3,  1.0,  0.45), "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
+	"star":          { "color": Color(1.0,  0.85, 0.1),  "bullets": 5,  "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25  },
+	# 進化形態（2体合体で誕生）
+	"double_circle": { "color": Color(0.0,  0.45, 1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
+	"hexagram":      { "color": Color(1.0,  0.1,  0.15), "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
+	"octagram":      { "color": Color(0.1,  1.0,  0.3),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
+	"decagram":      { "color": Color(1.0,  1.0,  0.0),  "bullets": 10, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 60  },
+}
+
+# 合体進化マップ（このキーにある形だけが合体できる）
+const EVOLVE_MAP := {
+	"circle":   "double_circle",
+	"triangle": "hexagram",
+	"square":   "octagram",
+	"star":     "decagram",
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -344,9 +357,9 @@ func _update_allies(delta: float) -> void:
 
 	for a in allies:
 		match a["shape"]:
-			"circle":   circles.append(a)
-			"triangle", "square": mids.append(a)
-			"star":     stars_a.append(a)
+			"circle", "double_circle":                    circles.append(a)
+			"triangle", "square", "hexagram", "octagram": mids.append(a)
+			"star", "decagram":                           stars_a.append(a)
 
 	_position_ring(circles, ALLY_OUTER_R, delta, 0.0)
 	_position_ring(mids,    ALLY_MID_R,   delta, PI / 3.0)
@@ -562,29 +575,52 @@ func _end_drawing() -> void:
 	_add_ally(draw_shape, coating_power)
 
 func _add_ally(shape: String, power: int) -> void:
-	var data: Dictionary = SHAPE_DATA[shape]
-	var hp_base: int     = data["hp_base"]
-	var hp: int          = hp_base + power
-	var kb_r: float      = data["kb_r"]
-
 	if allies.size() >= MAX_ALLIES:
-		var worst := _most_damaged_ally()
-		if not worst.is_empty():
-			_remove_ally(worst)
+		if not _try_merge():
+			var worst := _most_damaged_ally()
+			if not worst.is_empty():
+				_remove_ally(worst)
+	_spawn_ally_at(shape, power, player_pos)
 
+func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
+	var data: Dictionary = SHAPE_DATA[shape]
+	var hp_base: int = data["hp_base"] as int
+	var hp: int      = hp_base + power
+	var kb_r: float  = data["kb_r"] as float
 	var col := _ally_color(shape, power)
 	var sz  := _ally_size(power)
 	var node := Polygon2D.new()
 	node.polygon = _make_shape_polygon(shape, sz)
 	node.color = col
-	node.position = player_pos
+	node.position = pos
 	add_child(node)
-
 	allies.append({
 		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
 		"kb_resist": kb_r
 	})
+
+func _try_merge() -> bool:
+	var groups: Dictionary = {}
+	for a in allies:
+		var s: String = a["shape"] as String
+		if not EVOLVE_MAP.has(s): continue
+		if not groups.has(s): groups[s] = []
+		(groups[s] as Array).append(a)
+	for shape in groups:
+		var grp: Array = groups[shape] as Array
+		if grp.size() >= 2:
+			var a1: Dictionary = grp[0] as Dictionary
+			var a2: Dictionary = grp[1] as Dictionary
+			var merged_power: int  = (a1["coating"] as int) + (a2["coating"] as int)
+			var merge_pos: Vector2 = ((a1["node"] as Polygon2D).position + (a2["node"] as Polygon2D).position) / 2.0
+			_remove_ally(a1)
+			_remove_ally(a2)
+			var evolved: String = EVOLVE_MAP[shape] as String
+			_spawn_ally_at(evolved, merged_power, merge_pos)
+			_show_evolve_flash(evolved, merge_pos)
+			return true
+	return false
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # タッチ入力
@@ -660,6 +696,18 @@ func _evaluate_lap() -> void:
 		coating_power += gain
 		coating_lbl.text = "×%d" % coating_count
 	_show_lap_flash(label, col)
+
+func _show_evolve_flash(evolved: String, pos: Vector2) -> void:
+	var names := { "double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！", "decagram": "十芒星！" }
+	var txt: String = names.get(evolved, "EVOLVE!") as String
+	var lbl := _make_label(txt, 32, pos - Vector2(45, 20))
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
+	if jp_font: lbl.add_theme_font_override("font", jp_font)
+	add_child(lbl)
+	var tween := create_tween()
+	tween.tween_property(lbl, "position:y", lbl.position.y - 40, 0.8)
+	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 0.8)
+	tween.tween_callback(lbl.queue_free)
 
 func _show_lap_flash(label: String, col: Color) -> void:
 	var lbl := _make_label(label, 40, Vector2(W * 0.5 - 80, H * 0.5 - 30))
@@ -777,19 +825,24 @@ func _make_ngon(n: int, r: float) -> PackedVector2Array:
 		pts.append(Vector2(cos(a) * r, sin(a) * r))
 	return pts
 
+func _make_star_pts(n: int, size: float, inner_ratio: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(n * 2):
+		var a := float(i) / float(n * 2) * TAU - PI / 2.0
+		var d := size if i % 2 == 0 else size * inner_ratio
+		pts.append(Vector2(cos(a) * d, sin(a) * d))
+	return pts
+
 func _make_shape_polygon(shape: String, size: float) -> PackedVector2Array:
 	match shape:
-		"circle":   return _make_ngon(12, size)
-		"triangle": return _make_ngon(3, size)
-		"square":   return _make_ngon(4, size)
-		"star":
-			var pts := PackedVector2Array()
-			var inner := size * 0.45
-			for i in range(10):
-				var a := float(i) / 10.0 * TAU - PI / 2.0
-				var d := size if i % 2 == 0 else inner
-				pts.append(Vector2(cos(a) * d, sin(a) * d))
-			return pts
+		"circle":        return _make_ngon(12, size)
+		"triangle":      return _make_ngon(3, size)
+		"square":        return _make_ngon(4, size)
+		"star":          return _make_star_pts(5, size, 0.45)
+		"double_circle": return _make_ngon(24, size * 1.5)
+		"hexagram":      return _make_star_pts(6, size, 0.5)
+		"octagram":      return _make_star_pts(8, size, 0.42)
+		"decagram":      return _make_star_pts(10, size, 0.38)
 	return _make_ngon(6, size)
 
 func _make_label(txt: String, font_size: int, pos: Vector2) -> Label:
