@@ -12,6 +12,7 @@ var _lap_streams:      Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player  := 0
 var _shoot_cd     := 0.0  # 連射音の間引き
+var _unlocked     := false
 
 func _ready() -> void:
 	_shoot_stream     = _build_tone(1100.0, 0.04, 50.0, 0.25)
@@ -30,6 +31,17 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
+
+func unlock() -> void:
+	if _unlocked: return
+	_unlocked = true
+	# Web ブラウザの AudioContext を最初のタッチで解放する
+	var p := _players[0]
+	p.volume_db = -80.0
+	p.stream = _shoot_stream
+	p.play()
+	await get_tree().process_frame
+	p.volume_db = 0.0
 
 func _process(delta: float) -> void:
 	if _shoot_cd > 0.0: _shoot_cd -= delta

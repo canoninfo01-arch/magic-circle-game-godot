@@ -641,6 +641,7 @@ func _input(event: InputEvent) -> void:
 func _handle_joystick(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and joy_id == -1:
+			Sfx.unlock()
 			joy_id = event.index
 			joy_origin = event.position
 			joy_vec = Vector2.ZERO
