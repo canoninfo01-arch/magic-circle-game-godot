@@ -195,7 +195,7 @@ func _build_draw_layer() -> void:
 
 	trace_line = Line2D.new()
 	trace_line.width = 5.0
-	trace_line.default_color = Color(0.4, 0.9, 1.0)
+	trace_line.default_color = Color.WHITE  # modulate で色を制御するので白ベース
 	draw_layer.add_child(trace_line)
 
 	draw_timer_lbl = _make_label("8.0", 36, Vector2(W * 0.5 - 28, H * 0.08))
@@ -615,6 +615,17 @@ func _handle_joystick(event: InputEvent) -> void:
 
 
 func _handle_draw_input(event: InputEvent) -> void:
+	# ボタン領域（上部100px）のタッチはボタンに任せてトレースに追加しない
+	var pos: Vector2
+	if event is InputEventScreenTouch:
+		pos = (event as InputEventScreenTouch).position
+	elif event is InputEventScreenDrag:
+		pos = (event as InputEventScreenDrag).position
+	else:
+		return
+	if pos.y < 100.0:
+		return
+
 	if event is InputEventScreenTouch:
 		if event.pressed and draw_touch_id == -1:
 			draw_touch_id = event.index
