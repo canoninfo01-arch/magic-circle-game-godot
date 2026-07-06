@@ -43,7 +43,7 @@ const PLAYER_BULLET_DMG      := 4
 const DRAW_DURATION    := 8.0
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
-const DRAW_BRUSH_R     := 18.0
+const DRAW_BRUSH_R     := 35.0
 
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
 
