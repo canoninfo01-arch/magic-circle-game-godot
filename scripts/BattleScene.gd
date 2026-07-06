@@ -121,6 +121,7 @@ var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
 var shape_btn_row : Array[Button] = []
+var confirm_btn   : Button         = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UI
@@ -220,6 +221,13 @@ func _build_draw_layer() -> void:
 		btn.pressed.connect(_on_shape_btn.bind(shapes_list[i]))
 		draw_layer.add_child(btn)
 		shape_btn_row.append(btn)
+
+	confirm_btn = Button.new()
+	confirm_btn.text = "✓"
+	confirm_btn.size = Vector2(64, 52)
+	confirm_btn.position = Vector2(W - 74, H * 0.05)
+	confirm_btn.pressed.connect(_evaluate_lap)
+	draw_layer.add_child(confirm_btn)
 
 	if jp_font:
 		_apply_font(draw_layer, jp_font)
@@ -614,7 +622,6 @@ func _handle_draw_input(event: InputEvent) -> void:
 			trace_line.add_point(event.position)
 		elif not event.pressed and event.index == draw_touch_id:
 			draw_touch_id = -1
-			_evaluate_lap()
 	elif event is InputEventScreenDrag and event.index == draw_touch_id:
 		trace_pts.append(event.position)
 		trace_line.add_point(event.position)
