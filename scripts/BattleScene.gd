@@ -43,7 +43,7 @@ const PLAYER_BULLET_DMG      := 4
 const DRAW_DURATION    := 8.0
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
-const DRAW_BRUSH_R     := 35.0
+const DRAW_BRUSH_R     := 18.0
 
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
 
@@ -629,13 +629,11 @@ func _handle_draw_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and draw_touch_id == -1:
 			draw_touch_id = event.index
-			trace_pts.append(event.position)
-			trace_line.add_point(event.position)
+			_add_to_trace(event.position)
 		elif not event.pressed and event.index == draw_touch_id:
 			draw_touch_id = -1
 	elif event is InputEventScreenDrag and event.index == draw_touch_id:
-		trace_pts.append(event.position)
-		trace_line.add_point(event.position)
+		_add_to_trace(event.position)
 
 func _evaluate_lap() -> void:
 	if trace_pts.is_empty() or sample_pts.is_empty(): return
@@ -708,6 +706,20 @@ func _update_ui() -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ユーティリティ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 新しい点を追加するとき、前の点との線分上に補間点も trace_pts に追加する
+# → 「見えてる線 = 評価される線」になる
+func _add_to_trace(pos: Vector2) -> void:
+	trace_line.add_point(pos)
+	if not trace_pts.is_empty():
+		var prev: Vector2 = trace_pts.back()
+		var dist: float   = prev.distance_to(pos)
+		var step: float   = DRAW_BRUSH_R * 0.7
+		if dist > step:
+			var n: int = int(dist / step)
+			for i in range(1, n):
+				trace_pts.append(prev.lerp(pos, float(i) / float(n)))
+	trace_pts.append(pos)
+
 func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2]) -> float:
 	if s_pts.is_empty() or t_pts.is_empty(): return 0.0
 	var covered := 0
