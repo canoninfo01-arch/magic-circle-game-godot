@@ -91,6 +91,7 @@ var player_hp    := PLAYER_HP_MAX
 var player_pos   := Vector2.ZERO
 var player_node  : Polygon2D = null
 var camera       : Camera2D  = null
+var player_trail : Array[Vector2] = []
 var joy_id              : int   = -1
 var joy_origin          := Vector2.ZERO
 var joy_vec             := Vector2.ZERO
@@ -297,6 +298,13 @@ func _update_player(delta: float) -> void:
 		player_node.position = player_pos
 	if camera:
 		camera.position = player_pos
+	# 軌跡更新（最大20点）
+	if joy_vec.length_squared() > 0.01:
+		player_trail.append(player_pos)
+		if player_trail.size() > 20:
+			player_trail.pop_front()
+	elif not player_trail.is_empty():
+		player_trail.pop_front()
 	queue_redraw()
 
 	player_attack_timer -= delta
@@ -902,16 +910,27 @@ func _draw() -> void:
 	var tl  := player_pos - Vector2(W * 0.5, H * 0.5)
 	var pad := 200.0
 	draw_rect(Rect2(tl - Vector2(pad, pad), Vector2(W + pad * 2, H + pad * 2)), Color(0.03, 0.03, 0.10))
-	var grid    := 80.0
-	var grid_col := Color(1.0, 1.0, 1.0, 0.04)
+	# グリッド線
+	var grid     := 100.0
+	var line_col := Color(1.0, 1.0, 1.0, 0.07)
+	var dot_col  := Color(1.0, 1.0, 1.0, 0.18)
 	var ox := fmod(tl.x, grid)
 	var oy := fmod(tl.y, grid)
 	for i in range(-1, int(W / grid) + 2):
 		var x := tl.x - ox + i * grid
-		draw_line(Vector2(x, tl.y - pad), Vector2(x, tl.y + H + pad), grid_col, 1.0)
+		draw_line(Vector2(x, tl.y - pad), Vector2(x, tl.y + H + pad), line_col, 1.0)
 	for j in range(-1, int(H / grid) + 2):
 		var y := tl.y - oy + j * grid
-		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), grid_col, 1.0)
+		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
+	# 交点にドット
+	for i in range(-1, int(W / grid) + 2):
+		for j in range(-1, int(H / grid) + 2):
+			var p := Vector2(tl.x - ox + i * grid, tl.y - oy + j * grid)
+			draw_circle(p, 2.0, dot_col)
+	# プレイヤー軌跡
+	for k in range(player_trail.size()):
+		var alpha := float(k) / float(player_trail.size()) * 0.5
+		draw_circle(player_trail[k], 3.5, Color(0.5, 0.8, 1.0, alpha))
 
 func _make_star_pts(n: int, size: float, inner_ratio: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
