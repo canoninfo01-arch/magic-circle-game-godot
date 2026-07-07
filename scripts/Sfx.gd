@@ -11,8 +11,10 @@ var _item_stream:      AudioStreamWAV
 var _lap_streams:      Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player  := 0
-var _shoot_cd     := 0.0  # 連射音の間引き
+var _shoot_cd     := 0.0
 var _unlocked     := false
+var _bgm_player:   AudioStreamPlayer = null
+var _bgm_stream:   AudioStreamWAV    = null
 
 func _ready() -> void:
 	_shoot_stream     = _build_tone(1100.0, 0.04, 50.0, 0.25)
@@ -27,10 +29,14 @@ func _ready() -> void:
 		"good":    _build_chime([523.25],                  0.12, false),
 		"miss":    _build_chime([349.23, 261.63],          0.15, false),
 	}
+	_bgm_stream = _build_bgm()
 	for i in range(6):
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
+	_bgm_player = AudioStreamPlayer.new()
+	_bgm_player.volume_db = -10.0
+	add_child(_bgm_player)
 
 func unlock() -> void:
 	if _unlocked: return
@@ -63,6 +69,14 @@ func play_lap(grade: String) -> void:
 
 func play_card_get(rarity: int = 1) -> void:
 	_play(_item_stream if rarity < 3 else _evolve_stream)
+
+func play_bgm() -> void:
+	if _bgm_player.playing: return
+	_bgm_player.stream = _bgm_stream
+	_bgm_player.play()
+
+func stop_bgm() -> void:
+	_bgm_player.stop()
 
 func _play(stream: AudioStreamWAV) -> void:
 	var p := _players[_next_player]
@@ -122,6 +136,53 @@ func _build_chime(notes: Array[float], note_dur: float, vibrato_last: bool) -> A
 			data.encode_s16(idx * 2, int(s * 32767.0))
 			idx += 1
 	return _wrap_wav(data)
+
+func _build_bgm() -> AudioStreamWAV:
+	var bpm    := 120.0
+	var beat_s := 60.0 / bpm           # 0.5秒
+	var total_s := beat_s * 8.0        # 2小節ループ = 4秒
+	var n      := int(MIX_RATE * total_s)
+	var data   := PackedByteArray()
+	data.resize(n * 2)
+	# Cマイナー: C3 Eb3 F3 Ab3（小節ごとに切り替え）
+	var bass_freqs: Array[float] = [130.81, 155.56, 174.61, 207.65]
+	# リードアルペジオ: Cマイナー7th
+	var lead_notes: Array[float] = [261.63, 311.13, 392.0, 466.16]
+	for i in range(n):
+		var t      := float(i) / float(MIX_RATE)
+		var beat_t := t / beat_s              # 拍カウント（0〜8）
+		var s      := 0.0
+		# ── キック（2拍ごと）──
+		var kick_t   := fmod(t, beat_s * 2.0)
+		var kick_env := exp(-kick_t * 28.0)
+		var kick_f   := 70.0 * (1.0 + 2.5 * exp(-kick_t * 35.0))
+		s += sin(TAU * kick_f * kick_t) * kick_env * 0.45
+		# ── ハイハット（8分音符）──
+		var hat_t   := fmod(t, beat_s * 0.5)
+		var hat_env := exp(-hat_t * 70.0)
+		s += randf_range(-1.0, 1.0) * hat_env * 0.08
+		# ── スネア（2拍目・4拍目）──
+		var snare_t := fmod(t + beat_s, beat_s * 2.0)
+		var snare_env := exp(-snare_t * 35.0)
+		s += randf_range(-1.0, 1.0) * snare_env * 0.18
+		# ── ベースライン（小節ごと）──
+		var bar_idx   := int(beat_t / 4.0) % bass_freqs.size()
+		var bass_freq := bass_freqs[bar_idx]
+		var bass_t    := fmod(t, beat_s)
+		var bass_env  := maxf(0.0, 1.0 - bass_t / beat_s * 1.8)
+		s += (sin(TAU * bass_freq * t) + sin(TAU * bass_freq * 2.0 * t) * 0.25) * bass_env * 0.28
+		# ── リードアルペジオ（8分音符）──
+		var lead_idx  := int(beat_t * 2.0) % lead_notes.size()
+		var lead_freq := lead_notes[lead_idx]
+		var lead_t    := fmod(t, beat_s * 0.5)
+		var lead_env  := maxf(0.0, 1.0 - lead_t / (beat_s * 0.45) * 1.6)
+		s += sin(TAU * lead_freq * t) * lead_env * 0.14
+		data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 32767.0))
+	var stream := _wrap_wav(data)
+	stream.loop_mode  = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end   = n - 1
+	return stream
 
 func _wrap_wav(data: PackedByteArray) -> AudioStreamWAV:
 	var stream := AudioStreamWAV.new()

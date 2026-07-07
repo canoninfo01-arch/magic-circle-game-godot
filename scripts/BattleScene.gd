@@ -705,6 +705,7 @@ func _handle_joystick(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and joy_id == -1:
 			Sfx.unlock()
+			Sfx.play_bgm()
 			joy_id = event.index
 			joy_origin = event.position
 			joy_vec = Vector2.ZERO
@@ -823,6 +824,7 @@ func _save_best(t: float) -> void:
 
 func _game_over() -> void:
 	game_state = "game_over"
+	Sfx.stop_bgm()
 	var is_new := elapsed_time > best_time
 	_save_best(elapsed_time)
 
