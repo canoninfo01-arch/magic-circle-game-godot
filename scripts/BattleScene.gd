@@ -83,6 +83,7 @@ var jp_font: Font = null
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var game_state    := "battle"   # "battle" | "drawing" | "game_over"
 var elapsed_time  := 0.0
+var best_time     := 0.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # プレイヤー
@@ -160,6 +161,7 @@ var ally_lbl      : Label       = null
 func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
+	_load_save()
 
 	# カメラ（プレイヤー追従・無限フィールド）
 	camera = Camera2D.new()
@@ -802,21 +804,46 @@ func _show_lap_flash(label: String, col: Color) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲームオーバー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _fmt_time(t: float) -> String:
+	var m := int(t) / 60
+	var s := int(t) % 60
+	return "%d:%02d" % [m, s] if m > 0 else "%d秒" % int(t)
+
+func _load_save() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://save.cfg") == OK:
+		best_time = cfg.get_value("score", "best_time", 0.0) as float
+
+func _save_best(t: float) -> void:
+	if t <= best_time: return
+	best_time = t
+	var cfg := ConfigFile.new()
+	cfg.set_value("score", "best_time", best_time)
+	cfg.save("user://save.cfg")
+
 func _game_over() -> void:
 	game_state = "game_over"
+	var is_new := elapsed_time > best_time
+	_save_best(elapsed_time)
 
-	var over_lbl := _make_label("GAME OVER", 52, Vector2(W * 0.5 - 130, H * 0.35))
+	var over_lbl := _make_label("GAME OVER", 52, Vector2(W * 0.5 - 130, H * 0.30))
 	over_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 	ui_layer.add_child(over_lbl)
 
-	var score_lbl := _make_label("%.0f 秒生存" % elapsed_time, 28, Vector2(W * 0.5 - 70, H * 0.48))
+	var score_lbl := _make_label(_fmt_time(elapsed_time) + " 生存", 30, Vector2(W * 0.5 - 80, H * 0.43))
 	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	ui_layer.add_child(score_lbl)
+
+	var best_txt  := "NEW RECORD!!" if is_new else "ベスト: " + _fmt_time(best_time)
+	var best_col  := Color(1.0, 0.9, 0.2) if is_new else Color(0.6, 0.6, 0.6)
+	var best_lbl  := _make_label(best_txt, 22, Vector2(W * 0.5 - 80, H * 0.51))
+	best_lbl.add_theme_color_override("font_color", best_col)
+	ui_layer.add_child(best_lbl)
 
 	var retry_btn := Button.new()
 	retry_btn.text = "RETRY"
 	retry_btn.size = Vector2(180, 60)
-	retry_btn.position = Vector2(W * 0.5 - 90, H * 0.58)
+	retry_btn.position = Vector2(W * 0.5 - 90, H * 0.60)
 	retry_btn.pressed.connect(func(): get_tree().reload_current_scene())
 	if jp_font:
 		retry_btn.add_theme_font_override("font", jp_font)
