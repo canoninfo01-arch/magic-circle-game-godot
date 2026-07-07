@@ -108,6 +108,8 @@ var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0, "bulle
 # enemy: { hp, max_hp, pos, node:Polygon2D, kb:Vector2 }
 var enemies          : Array[Dictionary] = []
 var enemy_spawn_timer := 0.0
+var next_wave_time    := 60.0
+var wave_count        := 0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 弾
@@ -318,11 +320,24 @@ func _player_shoot() -> void:
 # 敵
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _spawn_enemies(delta: float) -> void:
+	# ウェーブラッシュ（60秒ごと）
+	if elapsed_time >= next_wave_time:
+		next_wave_time += 60.0
+		wave_count += 1
+		_trigger_wave()
+
+	# 通常スポーン
 	enemy_spawn_timer -= delta
 	if enemy_spawn_timer > 0.0: return
 	var interval := maxf(0.8, ENEMY_SPAWN_BASE - elapsed_time * 0.03)
 	enemy_spawn_timer = interval
 	_spawn_one_enemy()
+
+func _trigger_wave() -> void:
+	var count := 6 + wave_count * 2
+	for _i in range(count):
+		_spawn_one_enemy()
+	_show_wave_flash(wave_count)
 
 func _pick_enemy_type() -> String:
 	var r := randf()
@@ -744,6 +759,15 @@ func _evaluate_lap() -> void:
 		coating_power += gain
 		coating_lbl.text = "×%d" % coating_count
 	_show_lap_flash(label, col)
+
+func _show_wave_flash(wave: int) -> void:
+	var lbl := _make_label("WAVE  %d" % wave, 48, Vector2(W * 0.5 - 80, H * 0.38))
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.2))
+	if jp_font: lbl.add_theme_font_override("font", jp_font)
+	add_child(lbl)
+	var tween := create_tween()
+	tween.tween_property(lbl, "modulate:a", 0.0, 1.5)
+	tween.tween_callback(lbl.queue_free)
 
 func _show_evolve_flash(evolved: String, pos: Vector2) -> void:
 	var names := { "double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！", "decagram": "十芒星！" }
