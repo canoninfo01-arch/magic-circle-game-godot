@@ -51,7 +51,7 @@ const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
 const DRAW_BRUSH_R     := 18.0
 
-const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
+const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed"]
 
 const SHAPE_DATA := {
 	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
@@ -103,7 +103,7 @@ var player_attack_timer : float = 0.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ally: { shape, hp, max_hp, coating, node:Polygon2D, attack_timer }
 var allies : Array[Dictionary] = []
-var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0, "bullet_bonus": 0 }
+var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 敵
@@ -449,7 +449,7 @@ func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_
 
 func _ally_attack(a: Dictionary) -> void:
 	var shape: String    = a["shape"]
-	var bullet_count: int = (SHAPE_DATA[shape]["bullets"] as int) + (weapon_stats["bullet_bonus"] as int)
+	var bullet_count: int = SHAPE_DATA[shape]["bullets"] as int
 	if bullet_count <= 0: return
 
 	var ally_pos: Vector2 = a["node"].position
@@ -588,10 +588,9 @@ func _start_upgrade_select() -> void:
 	layer.add_child(title)
 
 	var labels := {
-		"atk_speed":    ["攻撃速度アップ",  "+20% 攻撃速度"],
-		"damage":       ["ダメージアップ",  "+30% 弾ダメージ"],
-		"move_speed":   ["移動速度アップ",  "+15% 移動速度"],
-		"bullet_bonus": ["弾数アップ",      "全仲間の弾数 +1"],
+		"atk_speed":  ["攻撃速度アップ", "+20% 攻撃速度"],
+		"damage":     ["ダメージアップ", "+30% 弾ダメージ"],
+		"move_speed": ["移動速度アップ", "+15% 移動速度"],
 	}
 	var card_w := 160.0
 	var gap    := 16.0
@@ -630,8 +629,7 @@ func _apply_weapon(subtype: String) -> void:
 	match subtype:
 		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
 		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
-		"move_speed":   weapon_stats["move_speed"]   = (weapon_stats["move_speed"]   as float) + 0.15
-		"bullet_bonus": weapon_stats["bullet_bonus"] = (weapon_stats["bullet_bonus"] as int)   + 1
+		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
