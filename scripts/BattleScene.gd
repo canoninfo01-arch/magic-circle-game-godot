@@ -81,7 +81,7 @@ var jp_font: Font = null
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲーム状態
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var game_state    := "battle"   # "battle" | "drawing" | "game_over"
+var game_state    := "battle"   # "battle" | "drawing" | "upgrade_select" | "game_over"
 var elapsed_time  := 0.0
 var best_time     := 0.0
 
@@ -550,10 +550,11 @@ func _update_items() -> void:
 		var it := items[i]
 		if player_pos.distance_to(it["pos"] as Vector2) < ITEM_PICKUP_R + PLAYER_R:
 			if it["type"] == "weapon":
-				_apply_weapon(it["subtype"])
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
+				_start_upgrade_select()
+				break
 			elif it["type"] == "char":
 				Sfx.play_item()
 				it["node"].queue_free()
@@ -562,6 +563,68 @@ func _update_items() -> void:
 				break
 	for i in range(to_remove.size() - 1, -1, -1):
 		items.remove_at(to_remove[i])
+
+func _start_upgrade_select() -> void:
+	game_state = "upgrade_select"
+	# ランダム3択（重複なし）
+	var pool := WEAPON_SUBTYPES.duplicate()
+	pool.shuffle()
+	var choices: Array[String] = []
+	for c in pool.slice(0, 3): choices.append(c as String)
+
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+
+	# 暗幕
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.size  = Vector2(W, H)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(dim)
+
+	var title := _make_label("パワーアップ選択", 22, Vector2(W * 0.5 - 90, H * 0.18))
+	title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+	layer.add_child(title)
+
+	var labels := {
+		"atk_speed":    ["攻撃速度アップ",  "+20% 攻撃速度"],
+		"damage":       ["ダメージアップ",  "+30% 弾ダメージ"],
+		"move_speed":   ["移動速度アップ",  "+15% 移動速度"],
+		"bullet_bonus": ["弾数アップ",      "全仲間の弾数 +1"],
+	}
+	var card_w := 160.0
+	var gap    := 16.0
+	var total  := card_w * 3.0 + gap * 2.0
+	var start_x := (W - total) * 0.5
+
+	for ci in range(choices.size()):
+		var ch    := choices[ci] as String
+		var info  := labels[ch] as Array
+		var cx    := start_x + ci * (card_w + gap)
+		var cy    := H * 0.30
+
+		var card := Button.new()
+		card.size = Vector2(card_w, 180)
+		card.position = Vector2(cx, cy)
+		if jp_font:
+			card.add_theme_font_override("font", jp_font)
+		card.add_theme_font_size_override("font_size", 14)
+
+		var head := _make_label(info[0] as String, 16, Vector2(cx + 10, cy + 14))
+		head.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		layer.add_child(head)
+
+		var desc := _make_label(info[1] as String, 13, Vector2(cx + 10, cy + 44))
+		desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+		layer.add_child(desc)
+
+		card.pressed.connect(func():
+			_apply_weapon(ch)
+			layer.queue_free()
+			game_state = "battle"
+		)
+		layer.add_child(card)
 
 func _apply_weapon(subtype: String) -> void:
 	match subtype:
