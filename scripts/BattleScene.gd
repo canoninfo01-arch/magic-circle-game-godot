@@ -90,6 +90,7 @@ var elapsed_time  := 0.0
 var player_hp    := PLAYER_HP_MAX
 var player_pos   := Vector2.ZERO
 var player_node  : Polygon2D = null
+var camera       : Camera2D  = null
 var joy_id              : int   = -1
 var joy_origin          := Vector2.ZERO
 var joy_vec             := Vector2.ZERO
@@ -159,12 +160,10 @@ func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
 
-	# 背景
-	var bg := ColorRect.new()
-	bg.color = Color(0.03, 0.03, 0.10)
-	bg.size = Vector2(W, H)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	# カメラ（プレイヤー追従・無限フィールド）
+	camera = Camera2D.new()
+	add_child(camera)
+	camera.make_current()
 
 	# グロー環境
 	var env := Environment.new()
@@ -294,10 +293,11 @@ func _update_player(delta: float) -> void:
 	if joy_vec.length_squared() > 0.01:
 		var spd: float = PLAYER_SPEED * (weapon_stats["move_speed"] as float)
 		player_pos += joy_vec * spd * delta
-		player_pos.x = clampf(player_pos.x, PLAYER_R, W - PLAYER_R)
-		player_pos.y = clampf(player_pos.y, PLAYER_R, H - PLAYER_R)
 	if player_node:
 		player_node.position = player_pos
+	if camera:
+		camera.position = player_pos
+	queue_redraw()
 
 	player_attack_timer -= delta
 	if player_attack_timer <= 0.0:
@@ -883,12 +883,13 @@ func _ally_size(_coating: int) -> float:
 	return ALLY_BASE_SIZE
 
 func _random_edge_pos() -> Vector2:
-	var edge := randi() % 4
-	match edge:
-		0: return Vector2(randf_range(0, W), -20)
-		1: return Vector2(randf_range(0, W), H + 20)
-		2: return Vector2(-20, randf_range(0, H))
-		_: return Vector2(W + 20, randf_range(0, H))
+	var hw := W * 0.5 + 60.0
+	var hh := H * 0.5 + 60.0
+	match randi() % 4:
+		0: return player_pos + Vector2(randf_range(-hw, hw), -hh)
+		1: return player_pos + Vector2(randf_range(-hw, hw),  hh)
+		2: return player_pos + Vector2(-hw, randf_range(-hh, hh))
+		_: return player_pos + Vector2( hw, randf_range(-hh, hh))
 
 func _make_ngon(n: int, r: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
@@ -896,6 +897,21 @@ func _make_ngon(n: int, r: float) -> PackedVector2Array:
 		var a := float(i) / float(n) * TAU - PI / 2.0
 		pts.append(Vector2(cos(a) * r, sin(a) * r))
 	return pts
+
+func _draw() -> void:
+	var tl  := player_pos - Vector2(W * 0.5, H * 0.5)
+	var pad := 200.0
+	draw_rect(Rect2(tl - Vector2(pad, pad), Vector2(W + pad * 2, H + pad * 2)), Color(0.03, 0.03, 0.10))
+	var grid    := 80.0
+	var grid_col := Color(1.0, 1.0, 1.0, 0.04)
+	var ox := fmod(tl.x, grid)
+	var oy := fmod(tl.y, grid)
+	for i in range(-1, int(W / grid) + 2):
+		var x := tl.x - ox + i * grid
+		draw_line(Vector2(x, tl.y - pad), Vector2(x, tl.y + H + pad), grid_col, 1.0)
+	for j in range(-1, int(H / grid) + 2):
+		var y := tl.y - oy + j * grid
+		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), grid_col, 1.0)
 
 func _make_star_pts(n: int, size: float, inner_ratio: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
