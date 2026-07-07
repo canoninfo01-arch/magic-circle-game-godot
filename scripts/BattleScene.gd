@@ -48,15 +48,15 @@ const DRAW_BRUSH_R     := 18.0
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "bullet_bonus"]
 
 const SHAPE_DATA := {
-	"circle":        { "color": Color(0.25, 0.55, 1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
-	"triangle":      { "color": Color(1.0,  0.3,  0.3),  "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
-	"square":        { "color": Color(0.3,  1.0,  0.45), "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
-	"star":          { "color": Color(1.0,  0.85, 0.1),  "bullets": 5,  "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25  },
+	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
+	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
+	"square":        { "color": Color(0.3,  1.0,  0.5),  "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
+	"star":          { "color": Color(1.0,  0.9,  0.1),  "bullets": 5,  "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25  },
 	# 進化形態（2体合体で誕生）
-	"double_circle": { "color": Color(0.0,  0.45, 1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
-	"hexagram":      { "color": Color(1.0,  0.1,  0.15), "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
-	"octagram":      { "color": Color(0.1,  1.0,  0.3),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
-	"decagram":      { "color": Color(1.0,  1.0,  0.0),  "bullets": 10, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 60  },
+	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
+	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
+	"octagram":      { "color": Color(0.2,  1.0,  0.4),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
+	"decagram":      { "color": Color(1.0,  1.0,  0.1),  "bullets": 10, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 60  },
 }
 
 # 合体進化マップ（このキーにある形だけが合体できる）
@@ -151,12 +151,30 @@ func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
 
-	# 背景は Node2D に直接・最初に追加（最背面に描画される）
+	# 背景
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.06, 0.14)
+	bg.color = Color(0.03, 0.03, 0.10)
 	bg.size = Vector2(W, H)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+
+	# グロー環境
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.03, 0.03, 0.10)
+	env.glow_enabled = true
+	env.glow_normalized = true
+	env.glow_intensity  = 1.6
+	env.glow_strength   = 1.2
+	env.glow_bloom      = 0.25
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	env.set_glow_level(0, 0.5)
+	env.set_glow_level(1, 1.0)
+	env.set_glow_level(2, 0.8)
+	env.set_glow_level(3, 0.4)
+	var world_env := WorldEnvironment.new()
+	world_env.environment = env
+	add_child(world_env)
 
 	_build_ui()
 	_build_draw_layer()
@@ -307,7 +325,7 @@ func _spawn_one_enemy() -> void:
 
 	var node := Polygon2D.new()
 	node.polygon = _make_ngon(3, ENEMY_R)
-	node.color = Color(0.9, 0.25, 0.35)
+	node.color = Color(1.0, 0.2, 0.35)
 	node.position = pos
 	add_child(node)
 
@@ -411,7 +429,7 @@ func _ally_attack(a: Dictionary) -> void:
 func _fire_bullet(from: Vector2, dir: Vector2, dmg: int) -> void:
 	var node := Polygon2D.new()
 	node.polygon = _make_ngon(6, BULLET_R)
-	node.color = Color(1.0, 0.95, 0.4)
+	node.color = Color(1.0, 1.0, 0.5)
 	node.position = from
 	add_child(node)
 	bullets.append({ "pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node })
