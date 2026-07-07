@@ -23,8 +23,14 @@ const ALLY_BASE_SIZE   := 14.0
 const ENEMY_SPAWN_BASE: float = 2.5
 const ENEMY_SPEED_BASE: float = 75.0
 const ENEMY_HP_BASE:    int   = 30
-const ENEMY_R:          float = 14.0
+const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
+
+const ENEMY_TYPES := {
+	"rusher":  { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.7,  "spd_m": 1.35 },
+	"fighter": { "sides": 5, "radius": 18.0, "color": Color(1.0, 0.5,  0.1),  "hp_m": 2.0,  "spd_m": 0.85 },
+	"tank":    { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
+}
 
 const ITEM_DROP_CHANCE := 0.35
 const CHAR_ITEM_RATIO  := 0.4
@@ -318,18 +324,32 @@ func _spawn_enemies(delta: float) -> void:
 	enemy_spawn_timer = interval
 	_spawn_one_enemy()
 
+func _pick_enemy_type() -> String:
+	var r := randf()
+	if elapsed_time >= 120.0:
+		if r < 0.25: return "tank"
+		if r < 0.60: return "fighter"
+		return "rusher"
+	elif elapsed_time >= 60.0:
+		if r < 0.40: return "fighter"
+		return "rusher"
+	return "rusher"
+
 func _spawn_one_enemy() -> void:
-	var pos: Vector2 = _random_edge_pos()
-	var hp: int      = int(ENEMY_HP_BASE + elapsed_time * 0.8)
-	var spd: float   = ENEMY_SPEED_BASE + elapsed_time * 0.5
+	var pos: Vector2  = _random_edge_pos()
+	var etype: String = _pick_enemy_type()
+	var edata: Dictionary = ENEMY_TYPES[etype]
+	var hp: int   = int((ENEMY_HP_BASE + elapsed_time * 0.8) * (edata["hp_m"] as float))
+	var spd: float = (ENEMY_SPEED_BASE + elapsed_time * 0.5) * (edata["spd_m"] as float)
+	var r: float  = edata["radius"] as float
 
 	var node := Polygon2D.new()
-	node.polygon = _make_ngon(3, ENEMY_R)
-	node.color = Color(1.0, 0.2, 0.35)
+	node.polygon = _make_ngon(edata["sides"] as int, r)
+	node.color = edata["color"] as Color
 	node.position = pos
 	add_child(node)
 
-	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "node": node, "kb": Vector2.ZERO })
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO })
 
 func _update_enemies(delta: float) -> void:
 	var to_remove : Array[int] = []
@@ -341,7 +361,7 @@ func _update_enemies(delta: float) -> void:
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
-		if (e["pos"] as Vector2).distance_to(player_pos) < PLAYER_R + ENEMY_R:
+		if (e["pos"] as Vector2).distance_to(player_pos) < PLAYER_R + (e["radius"] as float):
 			player_hp -= ENEMY_DAMAGE
 			Sfx.play_damage()
 			to_remove.append(i)
@@ -355,7 +375,7 @@ func _update_enemies(delta: float) -> void:
 		# 仲間との衝突
 		var hit_ally : Dictionary = {}
 		for a in allies:
-			if (e["pos"] as Vector2).distance_to(a["node"].position) < ALLY_BASE_SIZE + ENEMY_R:
+			if (e["pos"] as Vector2).distance_to(a["node"].position) < ALLY_BASE_SIZE + (e["radius"] as float):
 				var kb_dir: Vector2 = ((e["pos"] as Vector2) - a["node"].position).normalized()
 				e["kb"] = (e["kb"] as Vector2) + kb_dir * 180.0
 				a["hp"] -= 8
@@ -451,7 +471,7 @@ func _update_bullets(delta: float) -> void:
 
 		var hit := false
 		for e in enemies:
-			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < ENEMY_R + BULLET_R:
+			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < (e["radius"] as float) + BULLET_R:
 				e["hp"] -= b["dmg"]
 				hit = true
 				break
