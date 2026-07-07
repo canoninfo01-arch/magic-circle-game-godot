@@ -84,6 +84,7 @@ var jp_font: Font = null
 var game_state    := "battle"   # "battle" | "drawing" | "upgrade_select" | "game_over"
 var elapsed_time  := 0.0
 var best_time     := 0.0
+var hints_shown   := {}         # 表示済みヒントのフラグ
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # プレイヤー
@@ -533,7 +534,7 @@ func _spawn_item(pos: Vector2) -> void:
 	if is_char:
 		subtype = ["circle", "triangle", "square", "star"][randi() % 4]
 	else:
-		subtype = WEAPON_SUBTYPES[randi() % 4]
+		subtype = WEAPON_SUBTYPES[randi() % WEAPON_SUBTYPES.size()]
 
 	var col := Color(0.7, 0.4, 1.0) if is_char else Color(1.0, 0.55, 0.1)
 	var node := Polygon2D.new()
@@ -543,6 +544,8 @@ func _spawn_item(pos: Vector2) -> void:
 	add_child(node)
 
 	items.append({ "type": item_type, "subtype": subtype, "pos": pos, "node": node })
+	if is_char:
+		_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
 
 func _update_items() -> void:
 	var to_remove : Array[int] = []
@@ -729,6 +732,8 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
 		"kb_resist": kb_r
 	})
+	if allies.size() == 3:
+		_show_hint("merge", "仲間が10体になると合体進化！", Vector2(W * 0.5 - 110, H * 0.20))
 
 func _try_merge() -> bool:
 	var groups: Dictionary = {}
@@ -767,6 +772,7 @@ func _handle_joystick(event: InputEvent) -> void:
 		if event.pressed and joy_id == -1:
 			Sfx.unlock()
 			Sfx.play_bgm()
+			_show_hint("move", "← スティックで移動・敵を避けよう", Vector2(W * 0.5 - 110, H - 130))
 			joy_id = event.index
 			joy_origin = event.position
 			joy_vec = Vector2.ZERO
@@ -866,6 +872,19 @@ func _show_lap_flash(label: String, col: Color) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲームオーバー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _show_hint(key: String, text: String, pos: Vector2) -> void:
+	if hints_shown.has(key): return
+	hints_shown[key] = true
+	var lbl := _make_label(text, 17, pos)
+	lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 0.6))
+	lbl.modulate.a = 0.0
+	ui_layer.add_child(lbl)
+	var tw := create_tween()
+	tw.tween_property(lbl, "modulate:a", 1.0, 0.3)
+	tw.tween_interval(2.5)
+	tw.tween_property(lbl, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(lbl.queue_free)
+
 func _fmt_time(t: float) -> String:
 	var m := int(t) / 60
 	var s := int(t) % 60
