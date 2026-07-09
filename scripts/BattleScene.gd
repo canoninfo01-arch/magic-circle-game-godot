@@ -394,8 +394,17 @@ func _update_enemies(delta: float) -> void:
 		if flash_t > 0.0:
 			e["flash"] = maxf(0.0, flash_t - delta)
 			(e["node"] as Polygon2D).color = Color.WHITE if flash_t > 0.06 else e["color"] as Color
+		# 敵同士のセパレーション（群れが重ならないように押し離す）
+		var sep := Vector2.ZERO
+		for other in enemies:
+			if other == e: continue
+			var diff: Vector2 = (e["pos"] as Vector2) - (other["pos"] as Vector2)
+			var min_d: float  = (e["radius"] as float) + (other["radius"] as float) + 4.0
+			var d: float      = diff.length()
+			if d < min_d and d > 0.5:
+				sep += diff.normalized() * (min_d - d)
 		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
-		e["pos"] = (e["pos"] as Vector2) + dir * (e["speed"] as float) * delta + (e["kb"] as Vector2) * delta
+		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
