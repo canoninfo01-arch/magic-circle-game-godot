@@ -94,6 +94,8 @@ var player_pos   := Vector2.ZERO
 var player_node  : Polygon2D = null
 var camera       : Camera2D  = null
 var player_trail : Array[Vector2] = []
+var shake_power  := 0.0
+var particles    : Array[Dictionary] = []
 var joy_id              : int   = -1
 var joy_origin          := Vector2.ZERO
 var joy_vec             := Vector2.ZERO
@@ -288,6 +290,7 @@ func _process(delta: float) -> void:
 			_update_items()
 			_spawn_enemies(delta)
 			_update_ui()
+			_update_particles(delta)
 		"drawing":
 			_update_drawing(delta)
 		"game_over":
@@ -300,7 +303,11 @@ func _update_player(delta: float) -> void:
 	if player_node:
 		player_node.position = player_pos
 	if camera:
-		camera.position = player_pos
+		var shake_offset := Vector2.ZERO
+		if shake_power > 0.0:
+			shake_offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * shake_power
+			shake_power  = maxf(0.0, shake_power - 300.0 * delta)
+		camera.position = player_pos + shake_offset
 	# 軌跡更新（最大20点）
 	if joy_vec.length_squared() > 0.01:
 		player_trail.append(player_pos)
@@ -375,13 +382,18 @@ func _spawn_one_enemy() -> void:
 	node.position = pos
 	add_child(node)
 
-	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO })
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0 })
 
 func _update_enemies(delta: float) -> void:
 	var to_remove : Array[int] = []
 	for i in range(enemies.size()):
 		var e := enemies[i]
 		e["kb"] = (e["kb"] as Vector2).lerp(Vector2.ZERO, delta * 5.0)
+		# ヒットフラッシュ
+		var flash_t: float = e["flash"] as float
+		if flash_t > 0.0:
+			e["flash"] = maxf(0.0, flash_t - delta)
+			(e["node"] as Polygon2D).color = Color.WHITE if flash_t > 0.06 else e["color"] as Color
 		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
 		e["pos"] = (e["pos"] as Vector2) + dir * (e["speed"] as float) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
@@ -389,6 +401,7 @@ func _update_enemies(delta: float) -> void:
 		# プレイヤーとの衝突
 		if (e["pos"] as Vector2).distance_to(player_pos) < PLAYER_R + (e["radius"] as float):
 			player_hp -= ENEMY_DAMAGE
+			shake_power = 20.0
 			Sfx.play_damage()
 			to_remove.append(i)
 			e["node"].queue_free()
@@ -499,6 +512,7 @@ func _update_bullets(delta: float) -> void:
 		for e in enemies:
 			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < (e["radius"] as float) + BULLET_R:
 				e["hp"] -= b["dmg"]
+				e["flash"] = 0.12
 				hit = true
 				break
 
@@ -519,10 +533,37 @@ func _update_bullets(delta: float) -> void:
 
 func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
+	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
 	if randf() < ITEM_DROP_CHANCE:
 		_spawn_item(e["pos"] as Vector2)
 	e["node"].queue_free()
 	enemies.erase(e)
+
+func _spawn_death_particles(pos: Vector2, col: Color, r: float) -> void:
+	for _i in range(6):
+		var angle := randf() * TAU
+		var spd   := randf_range(60.0, 160.0)
+		var node  := Polygon2D.new()
+		node.polygon = _make_ngon(3, r * 0.28)
+		node.color   = col
+		node.position = pos
+		add_child(node)
+		particles.append({ "node": node, "vel": Vector2(cos(angle), sin(angle)) * spd, "life": 1.0 })
+
+func _update_particles(delta: float) -> void:
+	var dead: Array[int] = []
+	for i in range(particles.size()):
+		var p := particles[i]
+		p["life"] = (p["life"] as float) - delta * 1.8
+		if (p["life"] as float) <= 0.0:
+			(p["node"] as Polygon2D).queue_free()
+			dead.append(i)
+		else:
+			var n := p["node"] as Polygon2D
+			n.position += (p["vel"] as Vector2) * delta
+			n.modulate.a = p["life"] as float
+	for i in range(dead.size() - 1, -1, -1):
+		particles.remove_at(dead[i])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # アイテム
