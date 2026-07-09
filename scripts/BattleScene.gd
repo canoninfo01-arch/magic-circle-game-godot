@@ -27,9 +27,9 @@ const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
 
 const ENEMY_TYPES := {
-	"rusher":  { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.7,  "spd_m": 1.35 },
-	"fighter": { "sides": 5, "radius": 18.0, "color": Color(1.0, 0.5,  0.1),  "hp_m": 2.0,  "spd_m": 0.85 },
-	"tank":    { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
+	"shard":      { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.7,  "spd_m": 1.35 },
+	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(1.0, 0.5,  0.1),  "hp_m": 2.0,  "spd_m": 0.85 },
+	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
 }
 
 const ITEM_DROP_CHANCE := 0.35
@@ -360,13 +360,13 @@ func _trigger_wave() -> void:
 func _pick_enemy_type() -> String:
 	var r := randf()
 	if elapsed_time >= 120.0:
-		if r < 0.25: return "tank"
-		if r < 0.60: return "fighter"
-		return "rusher"
+		if r < 0.25: return "void_mark"
+		if r < 0.60: return "fracture"
+		return "shard"
 	elif elapsed_time >= 60.0:
-		if r < 0.40: return "fighter"
-		return "rusher"
-	return "rusher"
+		if r < 0.40: return "fracture"
+		return "shard"
+	return "shard"
 
 func _spawn_one_enemy() -> void:
 	var pos: Vector2  = _random_edge_pos()
