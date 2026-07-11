@@ -91,7 +91,7 @@ var hints_shown   := {}         # 表示済みヒントのフラグ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var player_hp    := PLAYER_HP_MAX
 var player_pos   := Vector2.ZERO
-var player_node  : Polygon2D = null
+var player_node  : Sprite2D = null
 var camera       : Camera2D  = null
 var player_trail : Array[Vector2] = []
 var shake_power  := 0.0
@@ -195,9 +195,10 @@ func _ready() -> void:
 	_add_ally("triangle", 1)
 
 func _build_player() -> void:
-	player_node = Polygon2D.new()
-	player_node.polygon = _make_ngon(5, PLAYER_R)
-	player_node.color = Color(1.0, 1.0, 1.0)
+	player_node = Sprite2D.new()
+	player_node.texture = preload("res://assets/sprites/player.png")
+	var tex_size: Vector2 = player_node.texture.get_size()
+	player_node.scale = Vector2.ONE * (PLAYER_R * 2.0 / max(tex_size.x, tex_size.y))
 	player_node.position = player_pos
 	add_child(player_node)
 
