@@ -198,7 +198,10 @@ func _build_player() -> void:
 	player_node = Sprite2D.new()
 	player_node.texture = preload("res://assets/sprites/player.png")
 	var tex_size: Vector2 = player_node.texture.get_size()
-	player_node.scale = Vector2.ONE * (PLAYER_R * 2.0 / max(tex_size.x, tex_size.y))
+	# 画像は1024x1024キャンバス中央に約59%サイズでキャラが描かれている（周囲は透明余白）
+	var content_px: float = max(tex_size.x, tex_size.y) * 0.59
+	var target_px := PLAYER_R * 2.8
+	player_node.scale = Vector2.ONE * (target_px / content_px)
 	player_node.position = player_pos
 	add_child(player_node)
 
