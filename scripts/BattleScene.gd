@@ -137,7 +137,6 @@ var draw_shape       := "circle"
 var draw_timer       := 0.0
 var coating_count    := 0
 var coating_power    := 0
-var best_lap_grade   := 0  # 0:なし 1:GOOD 2:GREAT 3:PERFECT（紋章リングの完成度に使う）
 var trace_pts        : Array[Vector2] = []
 var sample_pts       : Array[Vector2] = []
 var draw_touch_id    : int = -1
@@ -196,7 +195,7 @@ func _ready() -> void:
 	_build_ui()
 	_build_draw_layer()
 	_build_player()
-	_add_ally("triangle", 1, 0)
+	_add_ally("triangle", 1)
 
 func _build_player() -> void:
 	player_node = Sprite2D.new()
@@ -706,7 +705,6 @@ func _start_drawing(suggested_shape: String) -> void:
 	draw_timer = DRAW_DURATION
 	coating_count = 0
 	coating_power = 0
-	best_lap_grade = 0
 	trace_pts.clear()
 	trace_line.clear_points()
 	trace_line.modulate = Color.WHITE
@@ -722,7 +720,6 @@ func _on_shape_btn(shape: String) -> void:
 	trace_line.modulate = Color.WHITE
 	coating_count = 0
 	coating_power = 0
-	best_lap_grade = 0
 	coating_lbl.text = "×0"
 	_refresh_draw_guide()
 
@@ -770,17 +767,17 @@ func _cov_color(cov: float) -> Color:
 func _end_drawing() -> void:
 	draw_layer.visible = false
 	game_state = "battle"
-	_add_ally(draw_shape, coating_power, best_lap_grade)
+	_add_ally(draw_shape, coating_power)
 
-func _add_ally(shape: String, power: int, grade: int) -> void:
+func _add_ally(shape: String, power: int) -> void:
 	if allies.size() >= MAX_ALLIES:
 		if not _try_merge():
 			var worst := _most_damaged_ally()
 			if not worst.is_empty():
 				_remove_ally(worst)
-	_spawn_ally_at(shape, power, player_pos, grade)
+	_spawn_ally_at(shape, power, player_pos)
 
-func _spawn_ally_at(shape: String, power: int, pos: Vector2, grade: int) -> void:
+func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
 	var data: Dictionary = SHAPE_DATA[shape]
 	var hp_base: int = data["hp_base"] as int
 	var hp: int      = hp_base + power
@@ -792,23 +789,25 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, grade: int) -> void
 	node.color = col
 	node.position = pos
 	add_child(node)
-	_attach_sigil_ring(node, sz, grade)
+	_attach_sigil_ring(node, sz, power)
 	allies.append({
 		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
-		"kb_resist": kb_r, "grade": grade
+		"kb_resist": kb_r
 	})
 	if allies.size() == 3:
 		_show_hint("merge", "仲間が10体になると合体進化！", Vector2(W * 0.5 - 110, H * 0.20))
 
-func _attach_sigil_ring(parent: Polygon2D, sz: float, grade: int) -> void:
-	if grade <= 0: return
+func _attach_sigil_ring(parent: Polygon2D, sz: float, power: int) -> void:
+	if power < 10: return
 	var arc_frac := 0.0
 	var ring_col := Color.WHITE
-	match grade:
-		3: arc_frac = 1.0;  ring_col = Color(1.0, 0.95, 0.6, 0.95)
-		2: arc_frac = 0.85; ring_col = Color(0.85, 0.85, 0.8, 0.7)
-		_: arc_frac = 0.55; ring_col = Color(0.7, 0.7, 0.68, 0.4)
+	if power >= 70:
+		arc_frac = 1.0;  ring_col = Color(1.0, 0.95, 0.6, 0.95)
+	elif power >= 30:
+		arc_frac = 0.85; ring_col = Color(0.85, 0.85, 0.8, 0.7)
+	else:
+		arc_frac = 0.55; ring_col = Color(0.7, 0.7, 0.68, 0.4)
 
 	var ring := Line2D.new()
 	ring.width = 1.6
@@ -843,12 +842,11 @@ func _try_merge() -> bool:
 			var a1: Dictionary = grp[0] as Dictionary
 			var a2: Dictionary = grp[1] as Dictionary
 			var merged_power: int  = (a1["coating"] as int) + (a2["coating"] as int)
-			var merged_grade: int  = maxi(a1["grade"] as int, a2["grade"] as int)
 			var merge_pos: Vector2 = ((a1["node"] as Polygon2D).position + (a2["node"] as Polygon2D).position) / 2.0
 			_remove_ally(a1)
 			_remove_ally(a2)
 			var evolved: String = EVOLVE_MAP[shape] as String
-			_spawn_ally_at(evolved, merged_power, merge_pos, merged_grade)
+			_spawn_ally_at(evolved, merged_power, merge_pos)
 			_show_evolve_flash(evolved, merge_pos)
 			Sfx.play_evolve()
 			return true
@@ -918,13 +916,12 @@ func _evaluate_lap() -> void:
 	var label := ""
 	var col := Color.WHITE
 	var grade := ""
-	var grade_rank := 0
 	if cov >= 0.90:
-		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"; grade_rank = 3
+		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"
 	elif cov >= 0.75:
-		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great";   grade_rank = 2
+		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great"
 	elif cov >= 0.70:
-		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good";    grade_rank = 1
+		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good"
 	else:
 		label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
 
@@ -933,7 +930,6 @@ func _evaluate_lap() -> void:
 		coating_count += 1
 		coating_power += gain
 		coating_lbl.text = "×%d" % coating_count
-		best_lap_grade = maxi(best_lap_grade, grade_rank)
 	_show_lap_flash(label, col)
 
 func _show_wave_flash(wave: int) -> void:
