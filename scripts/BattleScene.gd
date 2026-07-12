@@ -55,13 +55,14 @@ const DRAW_BRUSH_R     := 18.0
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed"]
 
 const SHAPE_DATA := {
-	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
-	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
-	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
+	# 役割：水=速攻・機動／火=重火力・鈍足／土=盾・耐久（2026-07-12 属性名と役割の対応を再整理。「角の数=弾の数」ルールは廃止）
+	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
+	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
+	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
 	# 進化形態（2体合体で誕生）
-	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
-	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
-	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
+	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
+	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
+	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
 }
 
 # 合体進化マップ（このキーにある形だけが合体できる）
