@@ -20,6 +20,22 @@ const ALLY_MID_R       := 46.0
 const ALLY_INNER_R     := 26.0
 const ALLY_BASE_SIZE   := 14.0
 
+# 召喚獣ドット絵（基本形のみ。進化形は引き続き幾何学図形）
+const ALLY_TEX_WATER := preload("res://assets/sprites/ally_water.png")
+const ALLY_TEX_FIRE  := preload("res://assets/sprites/ally_fire.png")
+const ALLY_TEX_EARTH := preload("res://assets/sprites/ally_earth.png")
+const ALLY_SPRITE_TEXTURES := {
+	"circle":   ALLY_TEX_WATER,
+	"triangle": ALLY_TEX_FIRE,
+	"square":   ALLY_TEX_EARTH,
+}
+# 各画像の余白を除いた実キャラ部分のキャンバス比率（スケール計算用）
+const ALLY_SPRITE_CONTENT_RATIO := {
+	"circle":   0.90,
+	"triangle": 0.92,
+	"square":   0.94,
+}
+
 const ENEMY_SPAWN_BASE: float = 2.5
 const ENEMY_SPEED_BASE: float = 75.0
 const ENEMY_HP_BASE:    int   = 30
@@ -752,9 +768,21 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
 	var kb_r: float  = data["kb_r"] as float
 	var col := _ally_color(shape, power)
 	var sz  := _ally_size(power)
-	var node := Polygon2D.new()
-	node.polygon = _make_shape_polygon(shape, sz)
-	node.color = col
+	var node: Node2D
+	if ALLY_SPRITE_TEXTURES.has(shape):
+		var spr := Sprite2D.new()
+		spr.texture = ALLY_SPRITE_TEXTURES[shape]
+		var tex_size: Vector2 = spr.texture.get_size()
+		var content_ratio: float = ALLY_SPRITE_CONTENT_RATIO[shape] as float
+		var content_px: float = max(tex_size.x, tex_size.y) * content_ratio
+		spr.scale = Vector2.ONE * ((sz * 2.8) / content_px)
+		spr.modulate = col
+		node = spr
+	else:
+		var poly := Polygon2D.new()
+		poly.polygon = _make_shape_polygon(shape, sz)
+		poly.color = col
+		node = poly
 	node.position = pos
 	add_child(node)
 	_attach_sigil_ring(node, sz, power)
@@ -766,7 +794,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
 	if allies.size() == 3:
 		_show_hint("merge", "仲間が10体になると合体進化！", Vector2(W * 0.5 - 110, H * 0.20))
 
-func _attach_sigil_ring(parent: Polygon2D, sz: float, power: int) -> void:
+func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	if power < 10: return
 	var arc_frac := 0.0
 	var ring_col := Color.WHITE
@@ -810,7 +838,7 @@ func _try_merge() -> bool:
 			var a1: Dictionary = grp[0] as Dictionary
 			var a2: Dictionary = grp[1] as Dictionary
 			var merged_power: int  = (a1["coating"] as int) + (a2["coating"] as int)
-			var merge_pos: Vector2 = ((a1["node"] as Polygon2D).position + (a2["node"] as Polygon2D).position) / 2.0
+			var merge_pos: Vector2 = ((a1["node"] as Node2D).position + (a2["node"] as Node2D).position) / 2.0
 			_remove_ally(a1)
 			_remove_ally(a2)
 			var evolved: String = EVOLVE_MAP[shape] as String
