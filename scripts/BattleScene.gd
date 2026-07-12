@@ -817,7 +817,7 @@ func _attach_sigil_ring(parent: Polygon2D, sz: float, grade: int) -> void:
 		ring.add_point(p)
 	parent.add_child(ring)
 
-	var tw := create_tween()
+	var tw := ring.create_tween()
 	tw.set_loops()
 	tw.tween_property(ring, "rotation", TAU, 6.0).from(0.0)
 
