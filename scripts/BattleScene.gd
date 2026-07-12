@@ -58,12 +58,10 @@ const SHAPE_DATA := {
 	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
 	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
 	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
-	"star":          { "color": Color(1.0,  0.9,  0.1),  "bullets": 5,  "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25  },
 	# 進化形態（2体合体で誕生）
 	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
 	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
 	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
-	"decagram":      { "color": Color(1.0,  1.0,  0.1),  "bullets": 10, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 60  },
 }
 
 # 合体進化マップ（このキーにある形だけが合体できる）
@@ -71,7 +69,6 @@ const EVOLVE_MAP := {
 	"circle":   "double_circle",
 	"triangle": "hexagram",
 	"square":   "octagram",
-	"star":     "decagram",
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -148,7 +145,6 @@ var guide_glow    : Line2D      = null
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
-var shape_btn_row : Array[Button] = []
 var confirm_btn   : Button         = null
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -263,18 +259,6 @@ func _build_draw_layer() -> void:
 	coating_lbl = _make_label("×0", 44, Vector2(W * 0.5 - 28, H * 0.81))
 	coating_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
 	draw_layer.add_child(coating_lbl)
-
-	var btn_y := H * 0.05
-	var shapes_list := ["circle", "triangle", "square", "star"]
-	var labels_list := ["○", "△", "□", "★"]
-	for i in range(4):
-		var btn := Button.new()
-		btn.text = labels_list[i]
-		btn.size = Vector2(70, 50)
-		btn.position = Vector2(W * 0.5 - 150 + i * 78, btn_y)
-		btn.pressed.connect(_on_shape_btn.bind(shapes_list[i]))
-		draw_layer.add_child(btn)
-		shape_btn_row.append(btn)
 
 	confirm_btn = Button.new()
 	confirm_btn.text = "✓"
@@ -493,16 +477,11 @@ func _ally_attack(a: Dictionary) -> void:
 	var dmg: int          = int(BULLET_DMG_BASE * (weapon_stats["damage"] as float))
 	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 
-	if shape == "star":
-		for i in range(bullet_count):
-			var angle: float = float(i) / float(bullet_count) * TAU
-			_fire_bullet(ally_pos, Vector2(cos(angle), sin(angle)), dmg)
-	else:
-		var spread: float = 0.15 * (bullet_count - 1)
-		for i in range(bullet_count):
-			var offset: float = -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
-			var dir: Vector2  = base_dir.rotated(offset)
-			_fire_bullet(ally_pos, dir, dmg)
+	var spread: float = 0.15 * (bullet_count - 1)
+	for i in range(bullet_count):
+		var offset: float = -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
+		var dir: Vector2  = base_dir.rotated(offset)
+		_fire_bullet(ally_pos, dir, dmg)
 
 func _fire_bullet(from: Vector2, dir: Vector2, dmg: int) -> void:
 	var node := Polygon2D.new()
@@ -597,7 +576,7 @@ func _spawn_fragment(pos: Vector2) -> void:
 	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
 
 func _spawn_char_item(pos: Vector2) -> void:
-	var subtype: String = ["circle", "triangle", "square", "star"][randi() % 4]
+	var subtype: String = ["circle", "triangle", "square"][randi() % 3]
 	var node := Polygon2D.new()
 	node.polygon = _make_ngon(4, ITEM_R)
 	node.color = Color(0.7, 0.4, 1.0)
@@ -712,17 +691,6 @@ func _start_drawing(suggested_shape: String) -> void:
 	_refresh_draw_guide()
 	draw_layer.visible = true
 
-func _on_shape_btn(shape: String) -> void:
-	if game_state != "drawing": return
-	draw_shape = shape
-	trace_pts.clear()
-	trace_line.clear_points()
-	trace_line.modulate = Color.WHITE
-	coating_count = 0
-	coating_power = 0
-	coating_lbl.text = "×0"
-	_refresh_draw_guide()
-
 func _refresh_draw_guide() -> void:
 	var cx := W * 0.5
 	var cy := H * 0.5
@@ -737,7 +705,6 @@ func _refresh_draw_guide() -> void:
 		"circle":   Color(0.5, 0.7, 1.0, 0.8),
 		"triangle": Color(1.0, 0.5, 0.5, 0.8),
 		"square":   Color(0.85, 0.6, 0.2, 0.8),
-		"star":     Color(1.0, 0.9, 0.3, 0.8),
 	}
 	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
 	guide_line.default_color = sc
@@ -942,7 +909,7 @@ func _show_wave_flash(wave: int) -> void:
 	tween.tween_callback(lbl.queue_free)
 
 func _show_evolve_flash(evolved: String, pos: Vector2) -> void:
-	var names := { "double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！", "decagram": "十芒星！" }
+	var names := { "double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！" }
 	var txt: String = names.get(evolved, "EVOLVE!") as String
 	var lbl := _make_label(txt, 32, pos - Vector2(45, 20))
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
@@ -1149,11 +1116,9 @@ func _make_shape_polygon(shape: String, size: float) -> PackedVector2Array:
 		"circle":        return _make_ngon(12, size)
 		"triangle":      return _make_ngon(3, size)
 		"square":        return _make_ngon(4, size)
-		"star":          return _make_star_pts(5, size, 0.45)
 		"double_circle": return _make_ngon(24, size * 1.5)
 		"hexagram":      return _make_star_pts(6, size, 0.5)
 		"octagram":      return _make_star_pts(8, size, 0.42)
-		"decagram":      return _make_star_pts(10, size, 0.38)
 	return _make_ngon(6, size)
 
 func _make_label(txt: String, font_size: int, pos: Vector2) -> Label:
