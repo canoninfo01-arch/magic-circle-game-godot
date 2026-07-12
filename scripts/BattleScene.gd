@@ -32,10 +32,11 @@ const ENEMY_TYPES := {
 	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
 }
 
-const ITEM_DROP_CHANCE := 0.35
-const CHAR_ITEM_RATIO  := 0.4
+const FRAGMENT_THRESHOLD := 5
+const CHAR_ITEM_CHANCE  := 0.15
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
+const FRAGMENT_R       := 7.0
 
 const BULLET_SPEED     := 370.0
 const BULLET_RANGE     := 280.0
@@ -126,7 +127,7 @@ var bullets : Array[Dictionary] = []
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # アイテム
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# item: { type:"weapon"|"char", subtype:String, pos, node:Polygon2D }
+# item: { type:"fragment"|"char", subtype:String, pos, node:Polygon2D }
 var items : Array[Dictionary] = []
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -157,6 +158,8 @@ var ui_layer      : CanvasLayer = null
 var hp_lbl        : Label       = null
 var time_lbl      : Label       = null
 var ally_lbl      : Label       = null
+var frag_lbl      : Label       = null
+var fragment_count := 0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -218,6 +221,9 @@ func _build_ui() -> void:
 
 	ally_lbl = _make_label("仲間: 0", 14, Vector2(12, 42))
 	ui_layer.add_child(ally_lbl)
+
+	frag_lbl = _make_label("欠片: 0/%d" % FRAGMENT_THRESHOLD, 14, Vector2(12, 66))
+	ui_layer.add_child(frag_lbl)
 
 func _build_draw_layer() -> void:
 	draw_layer = CanvasLayer.new()
@@ -547,8 +553,9 @@ func _update_bullets(delta: float) -> void:
 func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
-	if randf() < ITEM_DROP_CHANCE:
-		_spawn_item(e["pos"] as Vector2)
+	_spawn_fragment(e["pos"] as Vector2)
+	if randf() < CHAR_ITEM_CHANCE:
+		_spawn_char_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
 	enemies.erase(e)
 
@@ -581,36 +588,37 @@ func _update_particles(delta: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # アイテム
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-func _spawn_item(pos: Vector2) -> void:
-	var is_char := randf() < CHAR_ITEM_RATIO
-	var item_type := "char" if is_char else "weapon"
-	var subtype := ""
-	if is_char:
-		subtype = ["circle", "triangle", "square", "star"][randi() % 4]
-	else:
-		subtype = WEAPON_SUBTYPES[randi() % WEAPON_SUBTYPES.size()]
-
-	var col := Color(0.7, 0.4, 1.0) if is_char else Color(1.0, 0.55, 0.1)
+func _spawn_fragment(pos: Vector2) -> void:
 	var node := Polygon2D.new()
-	node.polygon = _make_ngon(4, ITEM_R)
-	node.color = col
+	node.polygon = _make_ngon(3, FRAGMENT_R)
+	node.color = Color(0.6, 0.85, 1.0)
 	node.position = pos
 	add_child(node)
+	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
 
-	items.append({ "type": item_type, "subtype": subtype, "pos": pos, "node": node })
-	if is_char:
-		_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
+func _spawn_char_item(pos: Vector2) -> void:
+	var subtype: String = ["circle", "triangle", "square", "star"][randi() % 4]
+	var node := Polygon2D.new()
+	node.polygon = _make_ngon(4, ITEM_R)
+	node.color = Color(0.7, 0.4, 1.0)
+	node.position = pos
+	add_child(node)
+	items.append({ "type": "char", "subtype": subtype, "pos": pos, "node": node })
+	_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
 
 func _update_items() -> void:
 	var to_remove : Array[int] = []
 	for i in range(items.size()):
 		var it := items[i]
 		if player_pos.distance_to(it["pos"] as Vector2) < ITEM_PICKUP_R + PLAYER_R:
-			if it["type"] == "weapon":
+			if it["type"] == "fragment":
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
-				_start_upgrade_select()
+				fragment_count += 1
+				if fragment_count >= FRAGMENT_THRESHOLD:
+					fragment_count -= FRAGMENT_THRESHOLD
+					_start_upgrade_select()
 				break
 			elif it["type"] == "char":
 				Sfx.play_item()
@@ -993,6 +1001,7 @@ func _update_ui() -> void:
 	hp_lbl.text   = "HP: %d" % player_hp
 	time_lbl.text = "%.0fs" % elapsed_time
 	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
+	frag_lbl.text = "欠片: %d/%d" % [fragment_count, FRAGMENT_THRESHOLD]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ユーティリティ
