@@ -493,18 +493,28 @@ func _ally_attack(a: Dictionary) -> void:
 
 	var dmg: int          = int(BULLET_DMG_BASE * (weapon_stats["damage"] as float))
 	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
+	var bullet_col: Color = SHAPE_DATA[shape]["color"]
 
 	var spread: float = 0.15 * (bullet_count - 1)
 	for i in range(bullet_count):
 		var offset: float = -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
 		var dir: Vector2  = base_dir.rotated(offset)
-		_fire_bullet(ally_pos, dir, dmg)
+		_fire_bullet(ally_pos, dir, dmg, bullet_col)
 
-func _fire_bullet(from: Vector2, dir: Vector2, dmg: int) -> void:
-	var node := Polygon2D.new()
-	node.polygon = _make_ngon(6, BULLET_R)
-	node.color = Color(1.0, 1.0, 0.5)
+func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75)) -> void:
+	var node := Node2D.new()
 	node.position = from
+
+	var glow := Polygon2D.new()
+	glow.polygon = _make_ngon(10, BULLET_R * 2.6)
+	glow.color = Color(col.r, col.g, col.b, 0.3)
+	node.add_child(glow)
+
+	var rune := Polygon2D.new()
+	rune.polygon = _make_star_pts(4, BULLET_R * 1.9, 0.35)
+	rune.color = col
+	node.add_child(rune)
+
 	add_child(node)
 	bullets.append({ "pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node })
 
@@ -522,6 +532,7 @@ func _update_bullets(delta: float) -> void:
 		b["pos"] = (b["pos"] as Vector2) + (b["dir"] as Vector2) * BULLET_SPEED * delta
 		b["traveled"] = (b["traveled"] as float) + BULLET_SPEED * delta
 		b["node"].position = b["pos"] as Vector2
+		b["node"].rotation += delta * 16.0
 
 		var hit := false
 		for e in enemies:
