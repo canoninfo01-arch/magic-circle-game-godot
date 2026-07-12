@@ -57,12 +57,12 @@ const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed"]
 const SHAPE_DATA := {
 	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
 	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
-	"square":        { "color": Color(0.3,  1.0,  0.5),  "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
+	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
 	"star":          { "color": Color(1.0,  0.9,  0.1),  "bullets": 5,  "speed_m": 1.0, "kb_r": 0.1, "hp_base": 25  },
 	# 進化形態（2体合体で誕生）
 	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
 	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
-	"octagram":      { "color": Color(0.2,  1.0,  0.4),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
+	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
 	"decagram":      { "color": Color(1.0,  1.0,  0.1),  "bullets": 10, "speed_m": 1.0, "kb_r": 0.1, "hp_base": 60  },
 }
 
@@ -736,7 +736,7 @@ func _refresh_draw_guide() -> void:
 	var shape_colors := {
 		"circle":   Color(0.5, 0.7, 1.0, 0.8),
 		"triangle": Color(1.0, 0.5, 0.5, 0.8),
-		"square":   Color(0.4, 1.0, 0.6, 0.8),
+		"square":   Color(0.85, 0.6, 0.2, 0.8),
 		"star":     Color(1.0, 0.9, 0.3, 0.8),
 	}
 	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
