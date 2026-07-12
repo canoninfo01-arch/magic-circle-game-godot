@@ -17,9 +17,9 @@ var _bgm_player:   AudioStreamPlayer = null
 var _bgm_stream:   AudioStreamWAV    = null
 
 func _ready() -> void:
-	_shoot_stream     = _build_tone(1100.0, 0.04, 50.0, 0.25)
+	_shoot_stream     = _build_magic_shoot_sfx()
 	_enemy_die_stream = _build_hit_sfx()
-	_evolve_stream    = _build_chime([440.0, 554.37, 659.25, 880.0, 1108.73], 0.09, true)
+	_evolve_stream    = _build_chime([523.25, 622.25, 739.99, 880.0, 1046.50], 0.1, true)
 	_damage_stream    = _build_damage_sfx()
 	_game_over_stream = _build_chime([440.0, 349.23, 261.63, 196.0], 0.22, false)
 	_item_stream      = _build_chime([523.25, 659.25, 783.99], 0.09, false)
@@ -84,13 +84,17 @@ func _play(stream: AudioStreamWAV) -> void:
 	p.stream = stream
 	p.play()
 
-func _build_tone(freq: float, dur: float, decay: float, vol: float) -> AudioStreamWAV:
-	var n := int(MIX_RATE * dur)
+func _build_magic_shoot_sfx() -> AudioStreamWAV:
+	# 高音から急降下するピッチ＋倍音でキラッとした魔法弾の発射音にする
+	var dur := 0.09
+	var n   := int(MIX_RATE * dur)
 	var data := PackedByteArray()
 	data.resize(n * 2)
 	for i in range(n):
-		var t := float(i) / MIX_RATE
-		var s : float = sin(TAU * freq * t) * exp(-t * decay) * vol
+		var t    := float(i) / MIX_RATE
+		var env  := exp(-t * 30.0)
+		var freq := 1500.0 - t * 3400.0
+		var s : float = (sin(TAU * freq * t) * 0.7 + sin(TAU * freq * 2.01 * t) * 0.2) * env * 0.3
 		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
 	return _wrap_wav(data)
 
@@ -138,45 +142,49 @@ func _build_chime(notes: Array[float], note_dur: float, vibrato_last: bool) -> A
 	return _wrap_wav(data)
 
 func _build_bgm() -> AudioStreamWAV:
-	var bpm    := 120.0
-	var beat_s := 60.0 / bpm           # 0.5秒
-	var total_s := beat_s * 8.0        # 2小節ループ = 4秒
+	# SIGIL世界観（ダークファンタジー・壊れた紋章の世界）に合わせ、
+	# 明るい8分ハイハットのアルペジオ主体から、低いドローン＋遠い鼓動＋
+	# 疑似リバーブの効いたゆっくりしたアルペジオへ作り直した（2026-07-12）
+	var bpm    := 72.0
+	var beat_s := 60.0 / bpm
+	var total_s := beat_s * 8.0        # 2小節ループ
 	var n      := int(MIX_RATE * total_s)
 	var data   := PackedByteArray()
 	data.resize(n * 2)
 	# Cマイナー: C3 Eb3 F3 Ab3（小節ごとに切り替え）
 	var bass_freqs: Array[float] = [130.81, 155.56, 174.61, 207.65]
-	# リードアルペジオ: Cマイナー7th
-	var lead_notes: Array[float] = [261.63, 311.13, 392.0, 466.16]
+	# リードアルペジオ: Cマイナー7th（1オクターブ下げて重心を低く）
+	var lead_notes: Array[float] = [130.81, 155.56, 196.0, 233.08]
+	var echo_samples := int(MIX_RATE * beat_s * 0.5)
 	for i in range(n):
 		var t      := float(i) / float(MIX_RATE)
 		var beat_t := t / beat_s              # 拍カウント（0〜8）
 		var s      := 0.0
-		# ── キック（2拍ごと）──
-		var kick_t   := fmod(t, beat_s * 2.0)
-		var kick_env := exp(-kick_t * 28.0)
-		var kick_f   := 70.0 * (1.0 + 2.5 * exp(-kick_t * 35.0))
-		s += sin(TAU * kick_f * kick_t) * kick_env * 0.45
-		# ── ハイハット（8分音符）──
-		var hat_t   := fmod(t, beat_s * 0.5)
-		var hat_env := exp(-hat_t * 70.0)
-		s += randf_range(-1.0, 1.0) * hat_env * 0.08
-		# ── スネア（2拍目・4拍目）──
-		var snare_t := fmod(t + beat_s, beat_s * 2.0)
-		var snare_env := exp(-snare_t * 35.0)
-		s += randf_range(-1.0, 1.0) * snare_env * 0.18
+		# ── 低いドローン（常時鳴る不穏な持続音。ゆっくり揺れる）──
+		var drone_f := 65.41 * (1.0 + 0.006 * sin(TAU * 0.15 * t))
+		s += sin(TAU * drone_f * t) * 0.09
+		s += sin(TAU * drone_f * 1.5 * t) * 0.035
+		# ── 遠い鼓動のようなキック（1小節に1回）──
+		var kick_t   := fmod(t, beat_s * 4.0)
+		var kick_env := exp(-kick_t * 9.0)
+		var kick_f   := 55.0 * (1.0 + 1.8 * exp(-kick_t * 22.0))
+		s += sin(TAU * kick_f * kick_t) * kick_env * 0.5
 		# ── ベースライン（小節ごと）──
 		var bar_idx   := int(beat_t / 4.0) % bass_freqs.size()
 		var bass_freq := bass_freqs[bar_idx]
-		var bass_t    := fmod(t, beat_s)
-		var bass_env  := maxf(0.0, 1.0 - bass_t / beat_s * 1.8)
-		s += (sin(TAU * bass_freq * t) + sin(TAU * bass_freq * 2.0 * t) * 0.25) * bass_env * 0.28
-		# ── リードアルペジオ（8分音符）──
-		var lead_idx  := int(beat_t * 2.0) % lead_notes.size()
+		var bass_t    := fmod(t, beat_s * 2.0)
+		var bass_env  := maxf(0.0, 1.0 - bass_t / (beat_s * 2.0) * 1.15)
+		s += sin(TAU * bass_freq * t) * bass_env * 0.24
+		# ── リードアルペジオ（4分音符・減衰長め）──
+		var lead_idx  := int(beat_t) % lead_notes.size()
 		var lead_freq := lead_notes[lead_idx]
-		var lead_t    := fmod(t, beat_s * 0.5)
-		var lead_env  := maxf(0.0, 1.0 - lead_t / (beat_s * 0.45) * 1.6)
-		s += sin(TAU * lead_freq * t) * lead_env * 0.14
+		var lead_t    := fmod(t, beat_s)
+		var lead_env  := exp(-lead_t * 3.2)
+		s += sin(TAU * lead_freq * t) * lead_env * 0.16
+		# ── 疑似リバーブ（0.5拍前の音を薄く重ねて残響にする）──
+		if i >= echo_samples:
+			var prev := float(data.decode_s16((i - echo_samples) * 2)) / 32767.0
+			s += prev * 0.22
 		data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 32767.0))
 	var stream := _wrap_wav(data)
 	stream.loop_mode  = AudioStreamWAV.LOOP_FORWARD
