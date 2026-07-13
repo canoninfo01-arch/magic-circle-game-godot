@@ -614,22 +614,38 @@ func _update_particles(delta: float) -> void:
 # アイテム
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _spawn_fragment(pos: Vector2) -> void:
-	var node := Polygon2D.new()
-	node.polygon = _make_ngon(3, FRAGMENT_R)
-	node.color = Color(0.6, 0.85, 1.0)
+	var node := _make_rune_pickup(Color(0.6, 0.85, 1.0), FRAGMENT_R, 4, 0.4, 3.0)
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
 
 func _spawn_char_item(pos: Vector2) -> void:
 	var subtype: String = ["circle", "triangle", "square"][randi() % 3]
-	var node := Polygon2D.new()
-	node.polygon = _make_ngon(4, ITEM_R)
-	node.color = Color(0.7, 0.4, 1.0)
+	var node := _make_rune_pickup(Color(0.7, 0.4, 1.0), ITEM_R, 6, 0.45, 5.0)
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "char", "subtype": subtype, "pos": pos, "node": node })
 	_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
+
+# 弾と共通の「ルーン＋グロー」言語でアイテムを表現（欠片=控えめ・キャラアイテム=豪華に）
+func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: float, spin_speed: float) -> Node2D:
+	var node := Node2D.new()
+
+	var glow := Polygon2D.new()
+	glow.polygon = _make_ngon(10, r * 2.0)
+	glow.color = Color(col.r, col.g, col.b, 0.3)
+	node.add_child(glow)
+
+	var rune := Polygon2D.new()
+	rune.polygon = _make_star_pts(star_points, r, inner_ratio)
+	rune.color = col
+	node.add_child(rune)
+
+	var tw := node.create_tween()
+	tw.set_loops()
+	tw.tween_property(node, "rotation", TAU, spin_speed).from(0.0)
+
+	return node
 
 func _update_items() -> void:
 	var to_remove : Array[int] = []
