@@ -187,6 +187,8 @@ var hp_lbl        : Label       = null
 var time_lbl      : Label       = null
 var ally_lbl      : Label       = null
 var frag_lbl      : Label       = null
+var hp_bar_fill   : ColorRect   = null
+var hp_bar_w      := 130.0
 var fragment_count := 0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -241,17 +243,50 @@ func _build_ui() -> void:
 	ui_layer.layer = 10
 	add_child(ui_layer)
 
-	hp_lbl = _make_label("HP: 10", 16, Vector2(12, 12))
+	var stats_panel := _make_glow_panel(Vector2(6, 6), Vector2(150, 92), Color(0.5, 0.8, 1.0, 0.5))
+	ui_layer.add_child(stats_panel)
+
+	var time_panel := _make_glow_panel(Vector2(W - 84, 6), Vector2(78, 34), Color(1.0, 0.9, 0.5, 0.5))
+	ui_layer.add_child(time_panel)
+
+	hp_lbl = _make_label("HP: 10", 16, Vector2(14, 12))
 	ui_layer.add_child(hp_lbl)
 
-	time_lbl = _make_label("0s", 16, Vector2(W - 70, 12))
+	var hp_bar_bg := ColorRect.new()
+	hp_bar_bg.color = Color(0.15, 0.05, 0.05, 0.8)
+	hp_bar_bg.position = Vector2(14, 34)
+	hp_bar_bg.size = Vector2(hp_bar_w, 8)
+	ui_layer.add_child(hp_bar_bg)
+
+	hp_bar_fill = ColorRect.new()
+	hp_bar_fill.color = Color(1.0, 0.35, 0.35, 0.95)
+	hp_bar_fill.position = Vector2(14, 34)
+	hp_bar_fill.size = Vector2(hp_bar_w, 8)
+	ui_layer.add_child(hp_bar_fill)
+
+	time_lbl = _make_label("0s", 16, Vector2(W - 76, 13))
 	ui_layer.add_child(time_lbl)
 
-	ally_lbl = _make_label("仲間: 0", 14, Vector2(12, 42))
+	ally_lbl = _make_label("仲間: 0", 14, Vector2(14, 50))
 	ui_layer.add_child(ally_lbl)
 
-	frag_lbl = _make_label("欠片: 0/%d" % FRAGMENT_THRESHOLD, 14, Vector2(12, 66))
+	frag_lbl = _make_label("欠片: 0/%d" % FRAGMENT_THRESHOLD, 14, Vector2(14, 72))
 	ui_layer.add_child(frag_lbl)
+
+func _make_glow_panel(pos: Vector2, size: Vector2, border_col: Color) -> Panel:
+	var panel := Panel.new()
+	panel.position = pos
+	panel.size = size
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.04, 0.09, 0.72)
+	sb.set_corner_radius_all(10)
+	sb.set_border_width_all(2)
+	sb.border_color = border_col
+	sb.shadow_color = Color(border_col.r, border_col.g, border_col.b, 0.35)
+	sb.shadow_size = 6
+	panel.add_theme_stylebox_override("panel", sb)
+	return panel
 
 func _build_draw_layer() -> void:
 	draw_layer = CanvasLayer.new()
@@ -698,6 +733,11 @@ func _start_upgrade_select() -> void:
 		"damage":     ["ダメージアップ", "+30% 弾ダメージ"],
 		"move_speed": ["移動速度アップ", "+15% 移動速度"],
 	}
+	var accent_cols := {
+		"atk_speed":  Color(0.4, 1.0, 1.0),
+		"damage":     Color(1.0, 0.45, 0.3),
+		"move_speed": Color(0.5, 1.0, 0.6),
+	}
 	var card_w := 160.0
 	var gap    := 16.0
 	var total  := card_w * 3.0 + gap * 2.0
@@ -706,21 +746,52 @@ func _start_upgrade_select() -> void:
 	for ci in range(choices.size()):
 		var ch    := choices[ci] as String
 		var info  := labels[ch] as Array
+		var accent: Color = accent_cols[ch] as Color
 		var cx    := start_x + ci * (card_w + gap)
 		var cy    := H * 0.30
 
 		var card := Button.new()
 		card.size = Vector2(card_w, 180)
 		card.position = Vector2(cx, cy)
+		card.text = ""
 		if jp_font:
 			card.add_theme_font_override("font", jp_font)
 		card.add_theme_font_size_override("font_size", 14)
 
-		var head := _make_label(info[0] as String, 16, Vector2(cx + 10, cy + 14))
-		head.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.05, 0.05, 0.11, 0.9)
+		sb.set_corner_radius_all(12)
+		sb.set_border_width_all(2)
+		sb.border_color = accent
+		sb.shadow_color = Color(accent.r, accent.g, accent.b, 0.45)
+		sb.shadow_size = 10
+		card.add_theme_stylebox_override("normal", sb)
+		var sb_hover := sb.duplicate() as StyleBoxFlat
+		sb_hover.bg_color = Color(0.1, 0.1, 0.18, 0.95)
+		card.add_theme_stylebox_override("hover", sb_hover)
+		card.add_theme_stylebox_override("pressed", sb_hover)
+		card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		layer.add_child(card)
+
+		var icon := Polygon2D.new()
+		icon.polygon = _make_star_pts(4, 20.0, 0.4)
+		icon.color = accent
+		icon.position = Vector2(cx + card_w * 0.5, cy + 40)
+		layer.add_child(icon)
+		var icon_tw := icon.create_tween()
+		icon_tw.set_loops()
+		icon_tw.tween_property(icon, "rotation", TAU, 4.0).from(0.0)
+
+		var head := _make_label(info[0] as String, 15, Vector2(cx + 10, cy + 78))
+		head.custom_minimum_size = Vector2(card_w - 20, 40)
+		head.autowrap_mode = TextServer.AUTOWRAP_WORD
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		head.add_theme_color_override("font_color", accent)
 		layer.add_child(head)
 
-		var desc := _make_label(info[1] as String, 13, Vector2(cx + 10, cy + 44))
+		var desc := _make_label(info[1] as String, 13, Vector2(cx + 10, cy + 130))
+		desc.custom_minimum_size = Vector2(card_w - 20, 30)
+		desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 		layer.add_child(desc)
 
@@ -729,7 +800,6 @@ func _start_upgrade_select() -> void:
 			layer.queue_free()
 			game_state = "battle"
 		)
-		layer.add_child(card)
 
 func _apply_weapon(subtype: String) -> void:
 	match subtype:
@@ -1075,6 +1145,7 @@ func _update_ui() -> void:
 	time_lbl.text = "%.0fs" % elapsed_time
 	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
 	frag_lbl.text = "欠片: %d/%d" % [fragment_count, FRAGMENT_THRESHOLD]
+	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(PLAYER_HP_MAX), 0.0, 1.0)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ユーティリティ
