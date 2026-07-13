@@ -174,6 +174,7 @@ var draw_layer    : CanvasLayer = null
 var trace_line    : Line2D      = null
 var guide_line    : Line2D      = null
 var guide_glow    : Line2D      = null
+var guide_base_color := Color.WHITE
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
@@ -299,6 +300,29 @@ func _build_draw_layer() -> void:
 	dim.size = Vector2(W, H)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	draw_layer.add_child(dim)
+
+	# 背景の装飾リング（ゆっくり逆回転しあう2本。描画シーンを「魔法陣」らしくリッチにする）
+	var deco_outer := Line2D.new()
+	deco_outer.width = 2.0
+	deco_outer.default_color = Color(0.6, 0.8, 1.0, 0.25)
+	for p in _make_ring_points(DRAW_GUIDE_R * 1.55, 1.0):
+		deco_outer.add_point(p)
+	deco_outer.position = Vector2(W * 0.5, H * 0.5)
+	draw_layer.add_child(deco_outer)
+	var deco_outer_tw := deco_outer.create_tween()
+	deco_outer_tw.set_loops()
+	deco_outer_tw.tween_property(deco_outer, "rotation", TAU, 22.0).from(0.0)
+
+	var deco_inner := Line2D.new()
+	deco_inner.width = 2.0
+	deco_inner.default_color = Color(0.6, 0.8, 1.0, 0.18)
+	for p in _make_ring_points(DRAW_GUIDE_R * 1.3, 1.0):
+		deco_inner.add_point(p)
+	deco_inner.position = Vector2(W * 0.5, H * 0.5)
+	draw_layer.add_child(deco_inner)
+	var deco_inner_tw := deco_inner.create_tween()
+	deco_inner_tw.set_loops()
+	deco_inner_tw.tween_property(deco_inner, "rotation", -TAU, 16.0).from(0.0)
 
 	guide_glow = Line2D.new()
 	guide_glow.width = 22.0
@@ -839,8 +863,16 @@ func _refresh_draw_guide() -> void:
 		"square":   Color(0.85, 0.6, 0.2, 0.8),
 	}
 	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
-	guide_line.default_color = sc
-	guide_glow.default_color = Color(sc.r, sc.g, sc.b, 0.18)
+	guide_base_color = sc
+	_apply_guide_intensity()
+
+func _apply_guide_intensity() -> void:
+	# 周回を重ねるほどガイド自体が明るく・太くなり、強くなっていく実感を描画中に出す
+	var boost := clampf(float(coating_count) * 0.15, 0.0, 1.0)
+	guide_line.default_color = guide_base_color.lerp(Color.WHITE, boost)
+	guide_line.width = 6.0 + boost * 8.0
+	guide_glow.default_color = Color(guide_base_color.r, guide_base_color.g, guide_base_color.b, 0.18 + boost * 0.35)
+	guide_glow.width = 22.0 + boost * 24.0
 
 func _update_drawing(delta: float) -> void:
 	draw_timer -= delta
@@ -1036,12 +1068,31 @@ func _evaluate_lap() -> void:
 	else:
 		label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
 
-	Sfx.play_lap(grade)
+	var pitch := 1.0 + minf(0.5, float(coating_count) * 0.08)
+	Sfx.play_lap(grade, pitch)
 	if gain > 0:
 		coating_count += 1
 		coating_power += gain
 		coating_lbl.text = "×%d" % coating_count
+		_apply_guide_intensity()
+		_spawn_lap_pulse(col)
 	_show_lap_flash(label, col)
+
+func _spawn_lap_pulse(col: Color) -> void:
+	# 成功ラップのたびにガイドの輪から光の輪が広がる。周回を重ねるほど大きく広がる
+	var ring := Line2D.new()
+	ring.width = 4.0
+	ring.default_color = col
+	for p in _make_ring_points(DRAW_GUIDE_R, 1.0):
+		ring.add_point(p)
+	ring.position = Vector2(W * 0.5, H * 0.5)
+	draw_layer.add_child(ring)
+	var grow := 1.15 + minf(0.6, float(coating_count) * 0.08)
+	var tw := ring.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2.ONE * grow, 0.4)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.4)
+	tw.chain().tween_callback(ring.queue_free)
 
 func _show_wave_flash(wave: int) -> void:
 	var lbl := _make_label("WAVE  %d" % wave, 48, Vector2(W * 0.5 - 80, H * 0.38))
