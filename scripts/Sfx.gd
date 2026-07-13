@@ -144,17 +144,21 @@ func _build_chime(notes: Array[float], note_dur: float, vibrato_last: bool) -> A
 func _build_bgm() -> AudioStreamWAV:
 	# SIGIL世界観（ダークファンタジー・壊れた紋章の世界）に合わせ、
 	# 明るい8分ハイハットのアルペジオ主体から、低いドローン＋遠い鼓動＋
-	# 疑似リバーブの効いたゆっくりしたアルペジオへ作り直した（2026-07-12）
+	# 疑似リバーブの効いたゆっくりしたアルペジオへ作り直した（2026-07-12）。
+	# 2026-07-14：パッド（持続和音）ときらめきレイヤーを追加して厚みを増やした。
+	# ついでにコード進行が2種類しか鳴っていなかったバグ（bar_idxの周期がズレていた）も修正。
 	var bpm    := 72.0
 	var beat_s := 60.0 / bpm
 	var total_s := beat_s * 8.0        # 2小節ループ
 	var n      := int(MIX_RATE * total_s)
 	var data   := PackedByteArray()
 	data.resize(n * 2)
-	# Cマイナー: C3 Eb3 F3 Ab3（小節ごとに切り替え）
+	# Cマイナー: C3 Eb3 F3 Ab3（2拍ごとに切り替え）
 	var bass_freqs: Array[float] = [130.81, 155.56, 174.61, 207.65]
 	# リードアルペジオ: Cマイナー7th（1オクターブ下げて重心を低く）
 	var lead_notes: Array[float] = [130.81, 155.56, 196.0, 233.08]
+	# きらめき（オフビートに散らす高音のベル）
+	var sparkle_beats: Array[float] = [1.75, 3.75, 5.75, 7.75]
 	var echo_samples := int(MIX_RATE * beat_s * 0.5)
 	for i in range(n):
 		var t      := float(i) / float(MIX_RATE)
@@ -169,18 +173,28 @@ func _build_bgm() -> AudioStreamWAV:
 		var kick_env := exp(-kick_t * 9.0)
 		var kick_f   := 55.0 * (1.0 + 1.8 * exp(-kick_t * 22.0))
 		s += sin(TAU * kick_f * kick_t) * kick_env * 0.5
-		# ── ベースライン（小節ごと）──
-		var bar_idx   := int(beat_t / 4.0) % bass_freqs.size()
+		# ── ベースライン（2拍ごとにコード進行、4つとも鳴る）──
+		var bar_idx   := int(beat_t / 2.0) % bass_freqs.size()
 		var bass_freq := bass_freqs[bar_idx]
 		var bass_t    := fmod(t, beat_s * 2.0)
 		var bass_env  := maxf(0.0, 1.0 - bass_t / (beat_s * 2.0) * 1.15)
 		s += sin(TAU * bass_freq * t) * bass_env * 0.24
+		# ── パッド（持続和音。ルート+5度+オクターブを薄く重ねて厚みを出す）──
+		var pad_env := 0.5 - 0.5 * cos(TAU * clampf(bass_t / (beat_s * 2.0), 0.0, 1.0))  # 滑らかにスウェル
+		s += (sin(TAU * bass_freq * t) * 0.5 + sin(TAU * bass_freq * 1.5 * t) * 0.35 + sin(TAU * bass_freq * 2.0 * t) * 0.2) * pad_env * 0.06
 		# ── リードアルペジオ（4分音符・減衰長め）──
 		var lead_idx  := int(beat_t) % lead_notes.size()
 		var lead_freq := lead_notes[lead_idx]
 		var lead_t    := fmod(t, beat_s)
 		var lead_env  := exp(-lead_t * 3.2)
 		s += sin(TAU * lead_freq * t) * lead_env * 0.16
+		# ── きらめき（高音のベルを控えめに散らす）──
+		for sp in sparkle_beats:
+			var sp_t := beat_t - sp
+			if sp_t >= 0.0 and sp_t < 0.4:
+				var sp_env := exp(-sp_t * 12.0)
+				s += sin(TAU * 1046.5 * sp_t) * sp_env * 0.06
+				break
 		# ── 疑似リバーブ（0.5拍前の音を薄く重ねて残響にする）──
 		if i >= echo_samples:
 			var prev := float(data.decode_s16((i - echo_samples) * 2)) / 32767.0
