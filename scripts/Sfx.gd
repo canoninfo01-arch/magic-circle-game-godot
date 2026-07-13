@@ -63,9 +63,9 @@ func play_damage()    -> void: _play(_damage_stream)
 func play_game_over() -> void: _play(_game_over_stream)
 func play_item()      -> void: _play(_item_stream)
 
-func play_lap(grade: String) -> void:
+func play_lap(grade: String, pitch: float = 1.0) -> void:
 	if _lap_streams.has(grade):
-		_play(_lap_streams[grade] as AudioStreamWAV)
+		_play(_lap_streams[grade] as AudioStreamWAV, pitch)
 
 func play_card_get(rarity: int = 1) -> void:
 	_play(_item_stream if rarity < 3 else _evolve_stream)
@@ -78,23 +78,37 @@ func play_bgm() -> void:
 func stop_bgm() -> void:
 	_bgm_player.stop()
 
-func _play(stream: AudioStreamWAV) -> void:
+func _play(stream: AudioStreamWAV, pitch: float = 1.0) -> void:
 	var p := _players[_next_player]
 	_next_player = (_next_player + 1) % _players.size()
+	p.pitch_scale = pitch
 	p.stream = stream
 	p.play()
 
 func _build_magic_shoot_sfx() -> AudioStreamWAV:
-	# 高音から急降下するピッチ＋倍音でキラッとした魔法弾の発射音にする
-	var dur := 0.09
+	# 高音から急降下するピッチ＋倍音でキラッとした魔法弾の発射音にする。
+	# 単純な2本のサイン波だけだと安っぽく聞こえたため、デチューンした主音・
+	# 高次倍音・低域の芯・アタックのスパークノイズ・短い疑似エコーを重ねて厚みを出した（2026-07-15）
+	var dur := 0.13
 	var n   := int(MIX_RATE * dur)
 	var data := PackedByteArray()
 	data.resize(n * 2)
+	var echo_samples := int(MIX_RATE * 0.02)
 	for i in range(n):
 		var t    := float(i) / MIX_RATE
-		var env  := exp(-t * 30.0)
-		var freq := 1500.0 - t * 3400.0
-		var s : float = (sin(TAU * freq * t) * 0.7 + sin(TAU * freq * 2.01 * t) * 0.2) * env * 0.3
+		var env  := exp(-t * 24.0)
+		var freq := 1600.0 - t * 3600.0
+		var s : float = 0.0
+		s += sin(TAU * freq * t) * 0.55 * env
+		s += sin(TAU * freq * 1.006 * t) * 0.35 * env          # わずかなデチューンで厚みを出す
+		s += sin(TAU * freq * 2.02 * t) * 0.15 * env           # 高次倍音でキラッとした質感
+		s += sin(TAU * (freq * 0.5) * t) * 0.2 * exp(-t * 18.0) # 低域の芯
+		if t < 0.012:
+			s += randf_range(-1.0, 1.0) * exp(-t * 260.0) * 0.35 # 発射の瞬間だけ乗るスパーク
+		s *= 0.32
+		if i >= echo_samples:
+			var prev := float(data.decode_s16((i - echo_samples) * 2)) / 32767.0
+			s += prev * 0.15
 		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
 	return _wrap_wav(data)
 
