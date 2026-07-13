@@ -73,6 +73,8 @@ const BULLET_SPEED     := 370.0
 const BULLET_RANGE     := 280.0
 const BULLET_R         := 4.0
 const BULLET_DMG_BASE  := 5
+const SUMMON_BURST_R      := 100.0
+const SUMMON_BURST_DMG_BASE := 12
 const ATTACK_RANGE          := 240.0
 const ATTACK_INTERVAL       := 0.7
 const PLAYER_ATTACK_INTERVAL := 1.2
@@ -226,7 +228,7 @@ func _ready() -> void:
 	_build_ui()
 	_build_draw_layer()
 	_build_player()
-	_add_ally("triangle", 1)
+	_add_ally("triangle", 1, false)
 
 func _build_player() -> void:
 	player_node = Sprite2D.new()
@@ -900,15 +902,15 @@ func _end_drawing() -> void:
 	game_state = "battle"
 	_add_ally(draw_shape, coating_power)
 
-func _add_ally(shape: String, power: int) -> void:
+func _add_ally(shape: String, power: int, burst: bool = true) -> void:
 	if allies.size() >= MAX_ALLIES:
 		if not _try_merge():
 			var worst := _most_damaged_ally()
 			if not worst.is_empty():
 				_remove_ally(worst)
-	_spawn_ally_at(shape, power, player_pos)
+	_spawn_ally_at(shape, power, player_pos, burst)
 
-func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
+func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true) -> void:
 	var data: Dictionary = SHAPE_DATA[shape]
 	var hp_base: int = data["hp_base"] as int
 	var hp: int      = hp_base + power
@@ -940,6 +942,38 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2) -> void:
 	})
 	if allies.size() == 3:
 		_show_hint("merge", "仲間が10体になると合体進化！", Vector2(W * 0.5 - 110, H * 0.20))
+	if burst:
+		_summon_burst(pos, col, power)
+
+func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
+	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
+	Sfx.play_evolve()
+	shake_power = maxf(shake_power, 14.0)
+
+	var dmg := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
+	for e in enemies:
+		var diff: Vector2 = (e["pos"] as Vector2) - pos
+		var dist := diff.length()
+		if dist < SUMMON_BURST_R:
+			e["hp"] = (e["hp"] as int) - dmg
+			e["flash"] = 0.12
+			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
+			e["kb"] = (e["kb"] as Vector2) + kb_dir * 260.0
+
+	var ring := Line2D.new()
+	ring.width = 4.0
+	ring.default_color = col
+	for p in _make_ring_points(20.0, 1.0):
+		ring.add_point(p)
+	ring.position = pos
+	add_child(ring)
+	var ring_tw := ring.create_tween()
+	ring_tw.set_parallel(true)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (SUMMON_BURST_R / 20.0), 0.35)
+	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.35)
+	ring_tw.chain().tween_callback(ring.queue_free)
+
+	_spawn_death_particles(pos, col, 26.0)
 
 func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	if power < 10: return
