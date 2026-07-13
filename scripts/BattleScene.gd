@@ -48,6 +48,21 @@ const ENEMY_TYPES := {
 	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
 }
 
+# 敵ドット絵（VS基準：小さく・簡素・大量湧きでも視認性重視）
+const ENEMY_TEX_SHARD     := preload("res://assets/sprites/enemy_shard.png")
+const ENEMY_TEX_FRACTURE  := preload("res://assets/sprites/enemy_fracture.png")
+const ENEMY_TEX_VOID_MARK := preload("res://assets/sprites/enemy_void_mark.png")
+const ENEMY_SPRITE_TEXTURES := {
+	"shard":     ENEMY_TEX_SHARD,
+	"fracture":  ENEMY_TEX_FRACTURE,
+	"void_mark": ENEMY_TEX_VOID_MARK,
+}
+const ENEMY_SPRITE_CONTENT_RATIO := {
+	"shard":     0.70,
+	"fracture":  0.80,
+	"void_mark": 0.83,
+}
+
 const FRAGMENT_THRESHOLD := 5
 const CHAR_ITEM_CHANCE  := 0.15
 const ITEM_PICKUP_R    := 38.0
@@ -387,9 +402,12 @@ func _spawn_one_enemy() -> void:
 	var spd: float = (ENEMY_SPEED_BASE + elapsed_time * 0.5) * (edata["spd_m"] as float)
 	var r: float  = edata["radius"] as float
 
-	var node := Polygon2D.new()
-	node.polygon = _make_ngon(edata["sides"] as int, r)
-	node.color = edata["color"] as Color
+	var node := Sprite2D.new()
+	node.texture = ENEMY_SPRITE_TEXTURES[etype]
+	var tex_size: Vector2 = node.texture.get_size()
+	var content_ratio: float = ENEMY_SPRITE_CONTENT_RATIO[etype] as float
+	var content_px: float = max(tex_size.x, tex_size.y) * content_ratio
+	node.scale = Vector2.ONE * ((r * 2.2) / content_px)
 	node.position = pos
 	add_child(node)
 
@@ -404,7 +422,7 @@ func _update_enemies(delta: float) -> void:
 		var flash_t: float = e["flash"] as float
 		if flash_t > 0.0:
 			e["flash"] = maxf(0.0, flash_t - delta)
-			(e["node"] as Polygon2D).color = Color.WHITE if flash_t > 0.06 else e["color"] as Color
+			(e["node"] as Node2D).modulate = Color(2.2, 2.2, 2.2) if flash_t > 0.06 else Color.WHITE
 		# 敵同士のセパレーション（群れが重ならないように押し離す）
 		var sep := Vector2.ZERO
 		for other in enemies:
