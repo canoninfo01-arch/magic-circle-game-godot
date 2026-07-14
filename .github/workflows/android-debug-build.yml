@@ -29,6 +29,14 @@ jobs:
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
+      - name: Diagnose editor settings
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          find / -xdev -iname "editor_settings*.tres" 2>/dev/null
+          cat "$(find / -xdev -iname 'editor_settings*.tres' 2>/dev/null | head -1)" | grep -i -A1 -B1 "android\|java" || true
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+
       - name: Export Android debug APK
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
