@@ -38,6 +38,15 @@ jobs:
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
+      - name: Diagnose Android SDK contents
+        run: |
+          echo "--- build-tools ---"
+          ls -la /usr/lib/android-sdk/build-tools/ 2>&1 || echo "(no build-tools dir)"
+          echo "--- platforms ---"
+          ls -la /usr/lib/android-sdk/platforms/ 2>&1 || echo "(no platforms dir)"
+          echo "--- top level ---"
+          ls -la /usr/lib/android-sdk/ 2>&1 || echo "(no android-sdk dir)"
+
       - name: Export Android debug APK
         run: |
           mkdir -v -p build/android
