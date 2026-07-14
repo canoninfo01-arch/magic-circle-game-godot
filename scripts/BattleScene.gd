@@ -37,7 +37,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 }
 
 const ENEMY_SPAWN_BASE: float = 2.5
-const ENEMY_SPEED_BASE: float = 55.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55に減速
+const ENEMY_SPEED_BASE: float = 46.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55→46にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
@@ -555,7 +555,7 @@ func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_
 	for i in range(ring.size()):
 		var angle: float = float(i) / float(ring.size()) * TAU + angle_offset
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
-		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 230.0  # 2026-07-16：追従速度を300→230に減速
+		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 195.0  # 2026-07-16：追従速度を300→230→195にさらに減速
 		var cur_pos: Vector2 = ring[i]["node"].position
 		var dist: float      = cur_pos.distance_to(target)
 		var t: float         = minf(1.0, delta * spd / dist) if dist > 1.0 else 1.0
@@ -1038,10 +1038,12 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 
 func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
+	# 2026-07-16：ノックバックの強さも召喚パワーに応じて増すよう変更（強い召喚ほど吹き飛ばしも大きく）
 	Sfx.play_evolve()
-	shake_power = maxf(shake_power, 14.0)
+	shake_power = maxf(shake_power, 10.0 + minf(14.0, float(power) * 0.15))
 
-	var dmg := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
+	var dmg      := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
+	var kb_force := 220.0 + minf(260.0, float(power) * 3.5)
 	for e in enemies:
 		var diff: Vector2 = (e["pos"] as Vector2) - pos
 		var dist := diff.length()
@@ -1049,7 +1051,7 @@ func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 			e["hp"] = (e["hp"] as int) - dmg
 			e["flash"] = 0.12
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
-			e["kb"] = (e["kb"] as Vector2) + kb_dir * 260.0
+			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
 
 	var ring := Line2D.new()
 	ring.width = 4.0
