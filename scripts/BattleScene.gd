@@ -37,7 +37,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 }
 
 const ENEMY_SPAWN_BASE: float = 2.5
-const ENEMY_SPEED_BASE: float = 46.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55→46にさらに減速
+const ENEMY_SPEED_BASE: float = 38.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55→46→38にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
@@ -555,7 +555,7 @@ func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_
 	for i in range(ring.size()):
 		var angle: float = float(i) / float(ring.size()) * TAU + angle_offset
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
-		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 195.0  # 2026-07-16：追従速度を300→230→195にさらに減速
+		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 165.0  # 2026-07-16：追従速度を300→230→195→165にさらに減速
 		var cur_pos: Vector2 = ring[i]["node"].position
 		var dist: float      = cur_pos.distance_to(target)
 		var t: float         = minf(1.0, delta * spd / dist) if dist > 1.0 else 1.0
@@ -1433,19 +1433,12 @@ func _draw() -> void:
 		var y := tl.y - oy + j * grid
 		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
 
-	# 足元の「世界最後の陣」（2026-07-16：世界観の中心表現として追加。プレイヤーに常時追従）
-	var pulse := 0.75 + 0.25 * sin(elapsed_time * 1.2)
-	var sigil_r := 150.0
-	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.55, 0.35, 0.95, 0.16 * pulse), 16.0)   # 外側の淡いグロー
-	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.65, 0.5, 1.0, 0.5 * pulse), 2.5)        # くっきりした輪
-	draw_arc(player_pos, sigil_r * 0.72, 0.0, TAU, 48, Color(0.65, 0.5, 1.0, 0.3 * pulse), 1.5) # 内側の輪
-	var rot := elapsed_time * 0.2
-	var star_pts := _make_star_pts(6, sigil_r * 0.85, 0.5)
-	var rotated := PackedVector2Array()
-	for p in star_pts:
-		rotated.append(p.rotated(rot) + player_pos)
-	rotated.append(rotated[0])
-	draw_polyline(rotated, Color(0.65, 0.5, 1.0, 0.35 * pulse), 1.5)
+	# 足元の「世界最後の陣」（2026-07-16追加、同日：見づらさの指摘を受けて簡素化——
+	# 回転する六芒星の交差線を削除し、リングも1本に減らして薄くした。ゲームプレイの視認性を優先）
+	var pulse := 0.8 + 0.2 * sin(elapsed_time * 1.2)
+	var sigil_r := 140.0
+	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.55, 0.35, 0.95, 0.09 * pulse), 10.0)  # 淡いグロー
+	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.65, 0.5, 1.0, 0.28 * pulse), 1.5)      # 輪郭
 
 	# プレイヤー軌跡
 	for k in range(player_trail.size()):
