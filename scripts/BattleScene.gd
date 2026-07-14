@@ -37,7 +37,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 }
 
 const ENEMY_SPAWN_BASE: float = 2.5
-const ENEMY_SPEED_BASE: float = 75.0
+const ENEMY_SPEED_BASE: float = 55.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55に減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
@@ -181,6 +181,7 @@ var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
 var confirm_btn   : Button         = null
+var summon_result_nodes : Array[Node] = []
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UI
@@ -554,7 +555,7 @@ func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_
 	for i in range(ring.size()):
 		var angle: float = float(i) / float(ring.size()) * TAU + angle_offset
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
-		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 300.0
+		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 230.0  # 2026-07-16：追従速度を300→230に減速
 		var cur_pos: Vector2 = ring[i]["node"].position
 		var dist: float      = cur_pos.distance_to(target)
 		var t: float         = minf(1.0, delta * spd / dist) if dist > 1.0 else 1.0
@@ -846,6 +847,13 @@ func _start_drawing(suggested_shape: String) -> void:
 	trace_line.clear_points()
 	trace_line.modulate = Color.WHITE
 	draw_touch_id = -1
+	guide_line.visible = true
+	guide_glow.visible = true
+	trace_line.visible = true
+	draw_timer_lbl.visible = true
+	cov_lbl.visible = true
+	coating_lbl.visible = true
+	confirm_btn.visible = true
 	_refresh_draw_guide()
 	draw_layer.visible = true
 
@@ -888,7 +896,7 @@ func _update_drawing(delta: float) -> void:
 		cov_lbl.text = "0%"
 
 	if draw_timer <= 0.0:
-		_end_drawing()
+		_show_summon_result()
 
 func _cov_color(cov: float) -> Color:
 	if cov >= 0.90: return Color(1.0, 1.0, 0.3)   # 黄：PERFECT
@@ -896,6 +904,89 @@ func _cov_color(cov: float) -> Color:
 	if cov >= 0.55: return Color(0.4, 0.6, 1.0)   # 青：まあまあ
 	if cov >= 0.30: return Color(1.0, 0.65, 0.3)  # 橙：微妙
 	return Color(1.0, 0.4, 0.4)                   # 赤：ずれてる
+
+func _show_summon_result() -> void:
+	game_state = "summon_result"
+	guide_line.visible = false
+	guide_glow.visible = false
+	trace_line.visible = false
+	draw_timer_lbl.visible = false
+	cov_lbl.visible = false
+	coating_lbl.visible = false
+	confirm_btn.visible = false
+
+	var tier_name := ""
+	var tier_col  := Color(0.6, 0.6, 0.6)
+	var tier_frac := 0.0
+	if coating_power >= 70:
+		tier_name = "PERFECT召喚"; tier_col = Color(1.0, 0.95, 0.6); tier_frac = 1.0
+	elif coating_power >= 30:
+		tier_name = "GREAT召喚";   tier_col = Color(0.85, 0.85, 0.8); tier_frac = 0.85
+	elif coating_power >= 10:
+		tier_name = "GOOD召喚";    tier_col = Color(0.7, 0.7, 0.68);  tier_frac = 0.55
+	else:
+		tier_name = "召喚";        tier_col = Color(0.6, 0.6, 0.6);   tier_frac = 0.0
+
+	var panel := _make_glow_panel(Vector2(W * 0.5 - 110, H * 0.28), Vector2(220, 230), tier_col)
+	draw_layer.add_child(panel)
+	summon_result_nodes.append(panel)
+
+	var title := _make_label(tier_name, 28, Vector2(W * 0.5 - 100, H * 0.28 + 16))
+	title.custom_minimum_size = Vector2(200, 36)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", tier_col)
+	draw_layer.add_child(title)
+	summon_result_nodes.append(title)
+
+	var stat := _make_label("パワー %d（%d周）" % [coating_power, coating_count], 16, Vector2(W * 0.5 - 100, H * 0.28 + 56))
+	stat.custom_minimum_size = Vector2(200, 26)
+	stat.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stat.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	draw_layer.add_child(stat)
+	summon_result_nodes.append(stat)
+
+	if tier_frac > 0.0:
+		var preview := Line2D.new()
+		preview.width = 3.0
+		preview.default_color = tier_col
+		for p in _make_ring_points(36.0, tier_frac):
+			preview.add_point(p)
+		preview.position = Vector2(W * 0.5, H * 0.28 + 130)
+		draw_layer.add_child(preview)
+		summon_result_nodes.append(preview)
+		var preview_tw := preview.create_tween()
+		preview_tw.set_loops()
+		preview_tw.tween_property(preview, "rotation", TAU, 5.0).from(0.0)
+
+	var btn := Button.new()
+	btn.text = "召喚！"
+	btn.size = Vector2(180, 56)
+	btn.position = Vector2(W * 0.5 - 90, H * 0.28 + 170)
+	if jp_font:
+		btn.add_theme_font_override("font", jp_font)
+	btn.add_theme_font_size_override("font_size", 20)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.11, 0.92)
+	sb.set_corner_radius_all(12)
+	sb.set_border_width_all(2)
+	sb.border_color = tier_col
+	sb.shadow_color = Color(tier_col.r, tier_col.g, tier_col.b, 0.45)
+	sb.shadow_size = 10
+	btn.add_theme_stylebox_override("normal", sb)
+	var sb_hover := sb.duplicate() as StyleBoxFlat
+	sb_hover.bg_color = Color(0.1, 0.1, 0.18, 0.96)
+	btn.add_theme_stylebox_override("hover", sb_hover)
+	btn.add_theme_stylebox_override("pressed", sb_hover)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.pressed.connect(_confirm_summon)
+	draw_layer.add_child(btn)
+	summon_result_nodes.append(btn)
+
+func _confirm_summon() -> void:
+	for n in summon_result_nodes:
+		n.queue_free()
+	summon_result_nodes.clear()
+	_end_drawing()
 
 func _end_drawing() -> void:
 	draw_layer.visible = false
@@ -1307,14 +1398,45 @@ func _make_ngon(n: int, r: float) -> PackedVector2Array:
 		pts.append(Vector2(cos(a) * r, sin(a) * r))
 	return pts
 
+func _hash01(x: int, y: int) -> float:
+	var s := sin(float(x) * 12.9898 + float(y) * 78.233) * 43758.5453
+	return s - floor(s)
+
 func _draw() -> void:
 	var tl  := player_pos - Vector2(W * 0.5, H * 0.5)
 	var pad := 200.0
 	draw_rect(Rect2(tl - Vector2(pad, pad), Vector2(W + pad * 2, H + pad * 2)), Color(0.03, 0.03, 0.10))
-	# グリッド線
+
+	# 星空（「暗い宇宙」のイメージ。ランダムな瞬きで単調なグリッドと差別化）
+	var star_cell := 60.0
+	var s_ox := fmod(tl.x - pad, star_cell)
+	var s_oy := fmod(tl.y - pad, star_cell)
+	for i in range(-1, int((W + pad * 2) / star_cell) + 2):
+		for j in range(-1, int((H + pad * 2) / star_cell) + 2):
+			var wx := tl.x - pad - s_ox + i * star_cell
+			var wy := tl.y - pad - s_oy + j * star_cell
+			var h := _hash01(int(round(wx / star_cell)), int(round(wy / star_cell)))
+			if h < 0.1:
+				draw_circle(Vector2(wx, wy), 1.0 + h * 2.5, Color(0.8, 0.85, 1.0, 0.25 + h * 0.4))
+
+	# 壊れた紋章の残骸（大きく・薄く・欠けたリングを世界に散らす。「壊れた紋章の世界」を視覚化）
+	var sigil_cell := 340.0
+	var g_ox := fmod(tl.x - pad, sigil_cell)
+	var g_oy := fmod(tl.y - pad, sigil_cell)
+	for i in range(-1, int((W + pad * 2) / sigil_cell) + 2):
+		for j in range(-1, int((H + pad * 2) / sigil_cell) + 2):
+			var wx := tl.x - pad - g_ox + i * sigil_cell + sigil_cell * 0.5
+			var wy := tl.y - pad - g_oy + j * sigil_cell + sigil_cell * 0.5
+			var h := _hash01(int(round(wx / sigil_cell)) * 7 + 3, int(round(wy / sigil_cell)) * 13 + 5)
+			if h < 0.4:
+				var rad      := 50.0 + h * 70.0
+				var arc_len  := TAU * (0.45 + h * 0.5)
+				var start_a  := h * TAU
+				draw_arc(Vector2(wx, wy), rad, start_a, start_a + arc_len, 28, Color(0.55, 0.4, 0.85, 0.07), 2.0)
+
+	# グリッド線（控えめに）
 	var grid     := 100.0
-	var line_col := Color(1.0, 1.0, 1.0, 0.07)
-	var dot_col  := Color(1.0, 1.0, 1.0, 0.18)
+	var line_col := Color(1.0, 1.0, 1.0, 0.05)
 	var ox := fmod(tl.x, grid)
 	var oy := fmod(tl.y, grid)
 	for i in range(-1, int(W / grid) + 2):
@@ -1323,11 +1445,7 @@ func _draw() -> void:
 	for j in range(-1, int(H / grid) + 2):
 		var y := tl.y - oy + j * grid
 		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
-	# 交点にドット
-	for i in range(-1, int(W / grid) + 2):
-		for j in range(-1, int(H / grid) + 2):
-			var p := Vector2(tl.x - ox + i * grid, tl.y - oy + j * grid)
-			draw_circle(p, 2.0, dot_col)
+
 	# プレイヤー軌跡
 	for k in range(player_trail.size()):
 		var alpha := float(k) / float(player_trail.size()) * 0.5
