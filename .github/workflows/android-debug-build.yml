@@ -26,7 +26,7 @@ jobs:
           unzip -q templates.tpz -d templates_extracted
           mv templates_extracted/templates/* ~/.local/share/godot/export_templates/4.6.3.stable/
 
-      - name: Copy image's pre-baked Godot editor settings
+      - name: Copy image's pre-baked Godot editor settings (pre-heat pass)
         # GitHub Actions container jobs run with HOME=/github/home, but the
         # barichello/godot-ci image's correct java_sdk_path / android_sdk_path /
         # debug_keystore config lives at /root/.config/godot (the image's actual
@@ -38,19 +38,13 @@ jobs:
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
-      - name: Diagnose Android SDK contents
+      - name: Re-copy editor settings (pre-heat strips debug_keystore_user)
+        # The --editor --quit pass above re-saves editor_settings-4.6.tres and
+        # silently drops export/android/debug_keystore_user, breaking the export.
+        # Overwrite with the known-good file again right before exporting.
         run: |
-          echo "--- whoami / id ---"
-          whoami; id
-          echo "--- debug.keystore ---"
-          ls -la /root/debug.keystore 2>&1 || echo "(no debug.keystore)"
-          echo "--- cmdline-tools ---"
-          ls -la /usr/lib/android-sdk/cmdline-tools/ 2>&1 || echo "(no cmdline-tools)"
-          echo "--- android_sdk_path setting file content ---"
-          cat "$HOME/.config/godot/editor_settings-4.6.tres" | grep -i "android\|java"
-          echo "--- java check ---"
-          java -version 2>&1
-          echo "JAVA_HOME=$JAVA_HOME"
+          rm -rf "$HOME/.config/godot"
+          cp -r /root/.config/godot "$HOME/.config/godot"
 
       - name: Export Android debug APK
         run: |
