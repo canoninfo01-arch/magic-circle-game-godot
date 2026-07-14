@@ -40,12 +40,17 @@ jobs:
 
       - name: Diagnose Android SDK contents
         run: |
-          echo "--- build-tools ---"
-          ls -la /usr/lib/android-sdk/build-tools/ 2>&1 || echo "(no build-tools dir)"
-          echo "--- platforms ---"
-          ls -la /usr/lib/android-sdk/platforms/ 2>&1 || echo "(no platforms dir)"
-          echo "--- top level ---"
-          ls -la /usr/lib/android-sdk/ 2>&1 || echo "(no android-sdk dir)"
+          echo "--- whoami / id ---"
+          whoami; id
+          echo "--- debug.keystore ---"
+          ls -la /root/debug.keystore 2>&1 || echo "(no debug.keystore)"
+          echo "--- cmdline-tools ---"
+          ls -la /usr/lib/android-sdk/cmdline-tools/ 2>&1 || echo "(no cmdline-tools)"
+          echo "--- android_sdk_path setting file content ---"
+          cat "$HOME/.config/godot/editor_settings-4.6.tres" | grep -i "android\|java"
+          echo "--- java check ---"
+          java -version 2>&1
+          echo "JAVA_HOME=$JAVA_HOME"
 
       - name: Export Android debug APK
         run: |
