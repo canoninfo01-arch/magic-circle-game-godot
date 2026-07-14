@@ -19,10 +19,19 @@ jobs:
           mkdir -p fonts
           cp "$(find /usr/share/fonts -name "ipag.ttf" | head -1)" fonts/jp_font.ttf
 
+      - name: Download Android export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates/4.6.3.stable
+          wget -q "https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_export_templates.tpz" -O templates.tpz
+          unzip -q templates.tpz -d templates_extracted
+          mv templates_extracted/templates/* ~/.local/share/godot/export_templates/4.6.3.stable/
+
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
       - name: Export Android debug APK
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
         run: |
           mkdir -v -p build/android
           godot --headless --verbose --export-debug "Android" build/android/sigil-debug.apk
