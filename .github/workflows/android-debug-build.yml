@@ -29,16 +29,9 @@ jobs:
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
-      - name: Diagnose Java install
-        run: |
-          ls -la /usr/lib/jvm/ || true
-          which java || true
-          java -version || true
-          readlink -f "$(which java)" || true
-
       - name: Export Android debug APK
         env:
-          JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
           mkdir -v -p build/android
           godot --headless --verbose --export-debug "Android" build/android/sigil-debug.apk
