@@ -46,6 +46,16 @@ jobs:
           rm -rf "$HOME/.config/godot"
           cp -r /root/.config/godot "$HOME/.config/godot"
 
+      - name: Diagnose apksigner / adb / build-tools contents
+        run: |
+          echo "--- build-tools/33.0.2 contents ---"
+          ls -la /usr/lib/android-sdk/build-tools/33.0.2/ 2>&1 || echo "(missing)"
+          echo "--- adb ---"
+          ls -la /usr/bin/adb 2>&1 || echo "(no /usr/bin/adb)"
+          which adb || true
+          echo "--- platform-tools contents ---"
+          ls -la /usr/lib/android-sdk/platform-tools/ 2>&1 || echo "(missing)"
+
       - name: Export Android debug APK
         run: |
           mkdir -v -p build/android
