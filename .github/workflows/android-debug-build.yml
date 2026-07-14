@@ -26,20 +26,19 @@ jobs:
           unzip -q templates.tpz -d templates_extracted
           mv templates_extracted/templates/* ~/.local/share/godot/export_templates/4.6.3.stable/
 
+      - name: Copy image's pre-baked Godot editor settings
+        # GitHub Actions container jobs run with HOME=/github/home, but the
+        # barichello/godot-ci image's correct java_sdk_path / android_sdk_path /
+        # debug_keystore config lives at /root/.config/godot (the image's actual
+        # root home). Copy it into the effective HOME so Godot picks it up.
+        run: |
+          mkdir -p "$HOME/.config"
+          cp -r /root/.config/godot "$HOME/.config/godot"
+
       - name: Pre-heat asset cache
         run: godot --headless --verbose --editor --quit || true
 
-      - name: Diagnose editor settings
-        run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          find / -xdev -iname "editor_settings*.tres" 2>/dev/null
-          cat "$(find / -xdev -iname 'editor_settings*.tres' 2>/dev/null | head -1)" | grep -i -A1 -B1 "android\|java" || true
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-
       - name: Export Android debug APK
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
         run: |
           mkdir -v -p build/android
           godot --headless --verbose --export-debug "Android" build/android/sigil-debug.apk
