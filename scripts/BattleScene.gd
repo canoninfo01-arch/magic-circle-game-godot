@@ -1421,21 +1421,6 @@ func _draw() -> void:
 			if h < 0.1:
 				draw_circle(Vector2(wx, wy), 1.0 + h * 2.5, Color(0.8, 0.85, 1.0, 0.25 + h * 0.4))
 
-	# 壊れた紋章の残骸（大きく・薄く・欠けたリングを世界に散らす。「壊れた紋章の世界」を視覚化）
-	var sigil_cell := 340.0
-	var g_ox := fmod(tl.x - pad, sigil_cell)
-	var g_oy := fmod(tl.y - pad, sigil_cell)
-	for i in range(-1, int((W + pad * 2) / sigil_cell) + 2):
-		for j in range(-1, int((H + pad * 2) / sigil_cell) + 2):
-			var wx := tl.x - pad - g_ox + i * sigil_cell + sigil_cell * 0.5
-			var wy := tl.y - pad - g_oy + j * sigil_cell + sigil_cell * 0.5
-			var h := _hash01(int(round(wx / sigil_cell)) * 7 + 3, int(round(wy / sigil_cell)) * 13 + 5)
-			if h < 0.4:
-				var rad      := 50.0 + h * 70.0
-				var arc_len  := TAU * (0.45 + h * 0.5)
-				var start_a  := h * TAU
-				draw_arc(Vector2(wx, wy), rad, start_a, start_a + arc_len, 28, Color(0.55, 0.4, 0.85, 0.07), 2.0)
-
 	# グリッド線（控えめに）
 	var grid     := 100.0
 	var line_col := Color(1.0, 1.0, 1.0, 0.05)
@@ -1447,6 +1432,20 @@ func _draw() -> void:
 	for j in range(-1, int(H / grid) + 2):
 		var y := tl.y - oy + j * grid
 		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
+
+	# 足元の「世界最後の陣」（2026-07-16：世界観の中心表現として追加。プレイヤーに常時追従）
+	var pulse := 0.75 + 0.25 * sin(elapsed_time * 1.2)
+	var sigil_r := 150.0
+	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.55, 0.35, 0.95, 0.16 * pulse), 16.0)   # 外側の淡いグロー
+	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.65, 0.5, 1.0, 0.5 * pulse), 2.5)        # くっきりした輪
+	draw_arc(player_pos, sigil_r * 0.72, 0.0, TAU, 48, Color(0.65, 0.5, 1.0, 0.3 * pulse), 1.5) # 内側の輪
+	var rot := elapsed_time * 0.2
+	var star_pts := _make_star_pts(6, sigil_r * 0.85, 0.5)
+	var rotated := PackedVector2Array()
+	for p in star_pts:
+		rotated.append(p.rotated(rot) + player_pos)
+	rotated.append(rotated[0])
+	draw_polyline(rotated, Color(0.65, 0.5, 1.0, 0.35 * pulse), 1.5)
 
 	# プレイヤー軌跡
 	for k in range(player_trail.size()):
