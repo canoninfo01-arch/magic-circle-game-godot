@@ -1203,7 +1203,24 @@ func _evaluate_lap() -> void:
 		coating_lbl.text = "×%d" % coating_count
 		_apply_guide_intensity()
 		_spawn_lap_pulse(col)
+		_show_combo_flash(coating_count)
 	_show_lap_flash(label, col)
+
+func _show_combo_flash(count: int) -> void:
+	# 連続成功回数そのものを大きく見せて「積み上がってる」実感を明示する
+	if count < 2: return
+	var size := 24 + mini(24, (count - 1) * 4)
+	var t := clampf(float(count) / 8.0, 0.0, 1.0)
+	var col := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.85, 0.3), t)
+	var lbl := _make_label("%d連続！" % count, size, Vector2(W * 0.5 - 70, H * 0.5 + 22))
+	lbl.custom_minimum_size = Vector2(140, size + 10)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_color_override("font_color", col)
+	draw_layer.add_child(lbl)
+	var tw := lbl.create_tween()
+	tw.tween_property(lbl, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(lbl.queue_free)
+	shake_power = maxf(shake_power, 4.0 + minf(10.0, float(count) * 1.0))
 
 func _spawn_lap_pulse(col: Color) -> void:
 	# 成功ラップのたびにガイドの輪から光の輪が広がる。周回を重ねるほど大きく広がる
@@ -1433,12 +1450,17 @@ func _draw() -> void:
 		var y := tl.y - oy + j * grid
 		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
 
-	# 足元の「世界最後の陣」（2026-07-16追加、同日：見づらさの指摘を受けて簡素化——
-	# 回転する六芒星の交差線を削除し、リングも1本に減らして薄くした。ゲームプレイの視認性を優先）
-	var pulse := 0.8 + 0.2 * sin(elapsed_time * 1.2)
+	# 足元の「世界最後の陣」（2026-07-17再改訂：色を主張しない中立トーンに落とし、
+	# HPに連動して欠けていく仕様に変更。「なぜここに陣があるのか」に意味を持たせた）
+	var pulse := 0.85 + 0.15 * sin(elapsed_time * 1.2)
 	var sigil_r := 140.0
-	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.55, 0.35, 0.95, 0.09 * pulse), 10.0)  # 淡いグロー
-	draw_arc(player_pos, sigil_r, 0.0, TAU, 56, Color(0.65, 0.5, 1.0, 0.28 * pulse), 1.5)      # 輪郭
+	var sigil_col := Color(0.55, 0.55, 0.62)
+	var hp_frac := clampf(float(player_hp) / float(PLAYER_HP_MAX), 0.0, 1.0)
+	var start_a := -PI * 0.5
+	var arc_len := TAU * hp_frac
+	if arc_len > 0.01:
+		draw_arc(player_pos, sigil_r, start_a, start_a + arc_len, 56, Color(sigil_col.r, sigil_col.g, sigil_col.b, 0.07 * pulse), 8.0)   # 淡いグロー
+		draw_arc(player_pos, sigil_r, start_a, start_a + arc_len, 56, Color(sigil_col.r, sigil_col.g, sigil_col.b, 0.22 * pulse), 1.5)   # 輪郭
 
 	# プレイヤー軌跡
 	for k in range(player_trail.size()):
