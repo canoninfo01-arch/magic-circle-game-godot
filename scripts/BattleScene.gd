@@ -64,7 +64,9 @@ const ENEMY_SPRITE_CONTENT_RATIO := {
 }
 
 const FRAGMENT_THRESHOLD := 5
-const CHAR_ITEM_CHANCE  := 0.15
+const CHAR_ITEM_CHANCE  := 0.08  # 2026-07-18：召喚が頻発しすぎるとの指摘で0.15→0.08に減速
+const HEAL_ITEM_CHANCE  := 0.05
+const HEAL_AMOUNT       := 2
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 7.0
@@ -643,6 +645,8 @@ func _on_enemy_death(e: Dictionary) -> void:
 	_spawn_fragment(e["pos"] as Vector2)
 	if randf() < CHAR_ITEM_CHANCE:
 		_spawn_char_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
+	elif randf() < HEAL_ITEM_CHANCE:
+		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
 	enemies.erase(e)
 
@@ -689,6 +693,12 @@ func _spawn_char_item(pos: Vector2) -> void:
 	items.append({ "type": "char", "subtype": subtype, "pos": pos, "node": node })
 	_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
 
+func _spawn_heal_item(pos: Vector2) -> void:
+	var node := _make_rune_pickup(Color(0.4, 1.0, 0.55), FRAGMENT_R * 1.2, 4, 0.4, 4.0)
+	node.position = pos
+	add_child(node)
+	items.append({ "type": "heal", "subtype": "", "pos": pos, "node": node })
+
 # 弾と共通の「ルーン＋グロー」言語でアイテムを表現（欠片=控えめ・キャラアイテム=豪華に）
 func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: float, spin_speed: float) -> Node2D:
 	var node := Node2D.new()
@@ -728,6 +738,12 @@ func _update_items() -> void:
 				it["node"].queue_free()
 				to_remove.append(i)
 				_start_drawing(it["subtype"])
+				break
+			elif it["type"] == "heal":
+				Sfx.play_item()
+				it["node"].queue_free()
+				to_remove.append(i)
+				player_hp = mini(PLAYER_HP_MAX, player_hp + HEAL_AMOUNT)
 				break
 	for i in range(to_remove.size() - 1, -1, -1):
 		items.remove_at(to_remove[i])
@@ -1039,6 +1055,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
 	# 2026-07-16：ノックバックの強さも召喚パワーに応じて増すよう変更（強い召喚ほど吹き飛ばしも大きく）
+	# 2026-07-18：見た目（リングの広がり・パーティクル数・電撃）もパワーに連動させ、強い召喚ほど派手になるように拡張
 	Sfx.play_evolve()
 	shake_power = maxf(shake_power, 10.0 + minf(14.0, float(power) * 0.15))
 
@@ -1053,8 +1070,9 @@ func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
 
+	var visual_r := SUMMON_BURST_R * (1.0 + minf(0.7, float(power) / 150.0))
 	var ring := Line2D.new()
-	ring.width = 4.0
+	ring.width = 4.0 + minf(6.0, float(power) * 0.05)
 	ring.default_color = col
 	for p in _make_ring_points(20.0, 1.0):
 		ring.add_point(p)
@@ -1062,11 +1080,45 @@ func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 	add_child(ring)
 	var ring_tw := ring.create_tween()
 	ring_tw.set_parallel(true)
-	ring_tw.tween_property(ring, "scale", Vector2.ONE * (SUMMON_BURST_R / 20.0), 0.35)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (visual_r / 20.0), 0.35)
 	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.35)
 	ring_tw.chain().tween_callback(ring.queue_free)
 
-	_spawn_death_particles(pos, col, 26.0)
+	_spawn_summon_particles(pos, col, power)
+	if power >= 70:
+		_spawn_lightning_crackle(pos, visual_r)
+
+func _spawn_summon_particles(pos: Vector2, col: Color, power: int) -> void:
+	var count: int = mini(20, 6 + power / 8)
+	for _i in range(count):
+		var angle := randf() * TAU
+		var spd   := randf_range(80.0, 220.0)
+		var node  := Polygon2D.new()
+		node.polygon = _make_ngon(3, randf_range(6.0, 9.0))
+		node.color   = col
+		node.position = pos
+		add_child(node)
+		particles.append({ "node": node, "vel": Vector2(cos(angle), sin(angle)) * spd, "life": 1.0 })
+
+func _spawn_lightning_crackle(pos: Vector2, visual_r: float) -> void:
+	# パワーが高い召喚だけ、電撃っぽいジグザグ線を放射状に走らせる（「バリバリ」演出）
+	var bolt_count := 6
+	for i in range(bolt_count):
+		var base_angle := (float(i) / float(bolt_count)) * TAU + randf_range(-0.2, 0.2)
+		var bolt := Line2D.new()
+		bolt.width = 2.0
+		bolt.default_color = Color(0.9, 0.95, 1.0, 0.9)
+		var steps := 4
+		for s in range(steps + 1):
+			var t := float(s) / float(steps)
+			var r := visual_r * t
+			var jitter := Vector2(randf_range(-8.0, 8.0), randf_range(-8.0, 8.0)) * (1.0 - t)
+			bolt.add_point(Vector2(cos(base_angle), sin(base_angle)) * r + jitter)
+		bolt.position = pos
+		add_child(bolt)
+		var tw := bolt.create_tween()
+		tw.tween_property(bolt, "modulate:a", 0.0, 0.18)
+		tw.tween_callback(bolt.queue_free)
 
 func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	if power < 10: return
