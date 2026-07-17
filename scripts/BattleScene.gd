@@ -67,7 +67,7 @@ const FRAGMENT_THRESHOLD := 5
 const CHAR_ITEM_CHANCE  := 0.08  # 2026-07-18：召喚が頻発しすぎるとの指摘で0.15→0.08に減速
 const HEAL_ITEM_CHANCE  := 0.05
 const HEAL_AMOUNT       := 2
-const WEAPON_ITEM_CHANCE := 0.06
+const WEAPON_ITEM_CHANCE := 1.0  # TEMP DEBUG: 検証用に確率を上げてる、後で0.06に戻す
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 7.0
@@ -1061,15 +1061,18 @@ func _apply_weapon(subtype: String) -> void:
 		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
 
 func _start_weapon_select() -> void:
+	print("DEBUG: _start_weapon_select called")
 	# 属性武器の取得/強化選択（6種類中、上限未満のものから最大3択）
 	var pool: Array[String] = []
 	for id in ATTR_WEAPON_DATA:
 		if (weapon_levels[id] as int) < ATTR_WEAPON_MAX_LEVEL:
 			pool.append(id)
+	print("DEBUG: pool size = ", pool.size())
 	if pool.is_empty(): return
 	pool.shuffle()
 	var choices: Array[String] = []
 	for c in pool.slice(0, mini(3, pool.size())): choices.append(c)
+	print("DEBUG: choices = ", choices)
 
 	game_state = "upgrade_select"
 	var layer := CanvasLayer.new()
