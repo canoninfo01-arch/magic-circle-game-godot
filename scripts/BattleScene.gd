@@ -67,6 +67,7 @@ const FRAGMENT_THRESHOLD := 5
 const CHAR_ITEM_CHANCE  := 0.08  # 2026-07-18：召喚が頻発しすぎるとの指摘で0.15→0.08に減速
 const HEAL_ITEM_CHANCE  := 0.05
 const HEAL_AMOUNT       := 2
+const WEAPON_ITEM_CHANCE := 0.06
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 7.0
@@ -108,6 +109,30 @@ const EVOLVE_MAP := {
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 属性武器（2026-07-18：召喚獣ごとの武器バリエーション。属性単位で共有・武器アイテムで取得/強化）
+# 既存の基本攻撃（SHAPE_DATAのbullets）はそのまま残り、属性武器は上乗せで発動する
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const ATTR_WEAPON_MAX_LEVEL := 3
+
+# pattern: "projectile"（弾。pierce/homing/explode_rはオプション）"chain"（連鎖電撃）
+#          "orbit"（常時回転する近接武器）"pulse"（自分中心の定期衝撃波）
+const ATTR_WEAPON_DATA := {
+	"water_homing": { "attr": "circle",   "name": "追尾の光弾",     "pattern": "projectile", "cooldown": 1.4, "dmg": 6,  "col": Color(0.55, 0.85, 1.0), "homing": true },
+	"water_pierce": { "attr": "circle",   "name": "貫通の矢",       "pattern": "projectile", "cooldown": 1.0, "dmg": 5,  "col": Color(0.7,  0.95, 1.0), "pierce": true },
+	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 55.0 },
+	"fire_chain":   { "attr": "triangle", "name": "稲妻の鎖",       "pattern": "chain",      "cooldown": 1.8, "dmg": 6,  "col": Color(1.0,  0.9,  0.3),  "jumps": 3, "range": 160.0 },
+	"earth_orbit":  { "attr": "square",   "name": "回転する紋章の盾", "pattern": "orbit",    "cooldown": 0.0, "dmg": 4,  "col": Color(0.95, 0.75, 0.3),  "radius": 34.0, "rotate_speed": 2.6 },
+	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 75.0 },
+}
+
+# 進化形も基礎属性として扱う（合体後も同じ属性武器を使える）
+const SHAPE_TO_ATTR := {
+	"circle": "circle", "double_circle": "circle",
+	"triangle": "triangle", "hexagram": "triangle",
+	"square": "square", "octagram": "square",
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # フォント
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var jp_font: Font = null
@@ -138,9 +163,14 @@ var player_attack_timer : float = 0.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 仲間
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ally: { shape, hp, max_hp, coating, node:Polygon2D, attack_timer }
+# ally: { shape, hp, max_hp, coating, node:Polygon2D, attack_timer, weapon_timers, orbiters }
 var allies : Array[Dictionary] = []
 var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0 }
+var weapon_levels := {
+	"water_homing": 0, "water_pierce": 0,
+	"fire_explode": 0, "fire_chain": 0,
+	"earth_orbit": 0, "earth_wave": 0,
+}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 敵
@@ -551,6 +581,133 @@ func _update_allies(delta: float) -> void:
 		if (a["attack_timer"] as float) <= 0.0:
 			_ally_attack(a)
 			a["attack_timer"] = ATTACK_INTERVAL / (weapon_stats["atk_speed"] as float)
+		_update_ally_weapons(a, delta)
+
+# 属性武器（取得済みのものだけ、基本攻撃に上乗せで発動する）
+func _update_ally_weapons(a: Dictionary, delta: float) -> void:
+	var attr: String = SHAPE_TO_ATTR.get(a["shape"] as String, "") as String
+	if attr.is_empty(): return
+	if not a.has("weapon_timers"):
+		a["weapon_timers"] = {}
+	var timers: Dictionary = a["weapon_timers"]
+
+	for id in ATTR_WEAPON_DATA:
+		var wdata: Dictionary = ATTR_WEAPON_DATA[id]
+		if (wdata["attr"] as String) != attr: continue
+		var level: int = weapon_levels[id] as int
+		if level <= 0: continue
+
+		if (wdata["pattern"] as String) == "orbit":
+			_update_ally_orbiter(a, id, wdata, level, delta)
+			continue
+
+		if not timers.has(id):
+			timers[id] = randf_range(0.0, wdata["cooldown"] as float)
+		timers[id] = (timers[id] as float) - delta
+		if (timers[id] as float) <= 0.0:
+			_fire_attr_weapon(a, id, wdata, level)
+			timers[id] = (wdata["cooldown"] as float) / (1.0 + float(level - 1) * 0.15)
+
+func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int) -> void:
+	var ally_pos: Vector2 = a["node"].position
+	var nearest := _nearest_enemy(ally_pos)
+	if nearest.is_empty(): return
+	var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float))
+	var col: Color = wdata["col"]
+	match wdata["pattern"] as String:
+		"projectile":
+			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
+			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float)
+			Sfx.play_shoot()
+		"chain":
+			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col)
+		"pulse":
+			_fire_pulse(ally_pos, dmg, wdata["radius"] as float, col)
+
+func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: int, delta: float) -> void:
+	if not a.has("orbiters"):
+		a["orbiters"] = {}
+	var orbiters: Dictionary = a["orbiters"]
+	if not orbiters.has(id):
+		var node := Polygon2D.new()
+		node.polygon = _make_star_pts(4, 8.0, 0.4)
+		node.color = wdata["col"]
+		add_child(node)
+		orbiters[id] = { "node": node, "angle": randf() * TAU, "hit_cd": 0.0 }
+
+	var orb: Dictionary = orbiters[id]
+	orb["angle"] = (orb["angle"] as float) + delta * (wdata["rotate_speed"] as float)
+	var ally_pos: Vector2 = a["node"].position
+	var offset := Vector2(cos(orb["angle"] as float), sin(orb["angle"] as float)) * (wdata["radius"] as float)
+	var world_pos := ally_pos + offset
+	(orb["node"] as Polygon2D).position = world_pos
+
+	orb["hit_cd"] = maxf(0.0, (orb["hit_cd"] as float) - delta)
+	if (orb["hit_cd"] as float) <= 0.0:
+		var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float))
+		for e in enemies:
+			if world_pos.distance_to(e["pos"] as Vector2) < (e["radius"] as float) + 10.0:
+				e["hp"] = (e["hp"] as int) - dmg
+				e["flash"] = 0.12
+				orb["hit_cd"] = 0.35
+				break
+
+func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: float, col: Color) -> void:
+	var hit_enemies: Array = []
+	var cur_pos := from
+	var any_hit := false
+	for _j in range(jumps):
+		var target := {}
+		var best_d := chain_range
+		for e in enemies:
+			if hit_enemies.has(e): continue
+			var d: float = cur_pos.distance_to(e["pos"] as Vector2)
+			if d < best_d:
+				best_d = d
+				target = e
+		if target.is_empty(): break
+		target["hp"] = (target["hp"] as int) - dmg
+		target["flash"] = 0.12
+		_draw_lightning_bolt(cur_pos, target["pos"] as Vector2, col)
+		hit_enemies.append(target)
+		cur_pos = target["pos"] as Vector2
+		any_hit = true
+	if any_hit:
+		Sfx.play_shoot()
+
+func _draw_lightning_bolt(from: Vector2, to: Vector2, col: Color) -> void:
+	var bolt := Line2D.new()
+	bolt.width = 2.5
+	bolt.default_color = col
+	var steps := 5
+	for s in range(steps + 1):
+		var t := float(s) / float(steps)
+		var base := from.lerp(to, t)
+		var jitter := Vector2.ZERO if (s == 0 or s == steps) else Vector2(randf_range(-6.0, 6.0), randf_range(-6.0, 6.0))
+		bolt.add_point(base + jitter)
+	add_child(bolt)
+	var tw := bolt.create_tween()
+	tw.tween_property(bolt, "modulate:a", 0.0, 0.2)
+	tw.tween_callback(bolt.queue_free)
+
+func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color) -> void:
+	Sfx.play_shoot()
+	for e in enemies:
+		if pos.distance_to(e["pos"] as Vector2) < radius:
+			e["hp"] = (e["hp"] as int) - dmg
+			e["flash"] = 0.12
+	var ring := Line2D.new()
+	ring.width = 3.0
+	ring.default_color = col
+	for p in _make_ring_points(10.0, 1.0):
+		ring.add_point(p)
+	ring.position = pos
+	add_child(ring)
+	var ring_tw := ring.create_tween()
+	ring_tw.set_parallel(true)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (radius / 10.0), 0.3)
+	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.3)
+	ring_tw.chain().tween_callback(ring.queue_free)
 
 func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_offset: float = 0.0) -> void:
 	if ring.is_empty(): return
@@ -583,7 +740,7 @@ func _ally_attack(a: Dictionary) -> void:
 		var dir: Vector2  = base_dir.rotated(offset)
 		_fire_bullet(ally_pos, dir, dmg, bullet_col)
 
-func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75)) -> void:
+func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75), pierce: bool = false, homing: bool = false, explode_r: float = 0.0) -> void:
 	var node := Node2D.new()
 	node.position = from
 
@@ -598,10 +755,16 @@ func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0,
 	node.add_child(rune)
 
 	add_child(node)
-	bullets.append({ "pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node })
+	bullets.append({
+		"pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node, "col": col,
+		"pierce": pierce, "homing": homing, "explode_r": explode_r, "hit_set": []
+	})
 
 func _remove_ally(a: Dictionary) -> void:
 	a["node"].queue_free()
+	if a.has("orbiters"):
+		for id in (a["orbiters"] as Dictionary):
+			((a["orbiters"] as Dictionary)[id] as Dictionary)["node"].queue_free()
 	allies.erase(a)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -611,20 +774,33 @@ func _update_bullets(delta: float) -> void:
 	var to_remove : Array[int] = []
 	for i in range(bullets.size()):
 		var b := bullets[i]
+		if b.get("homing", false):
+			var target := _nearest_enemy(b["pos"] as Vector2)
+			if not target.is_empty():
+				var desired: Vector2 = ((target["pos"] as Vector2) - (b["pos"] as Vector2)).normalized()
+				b["dir"] = (b["dir"] as Vector2).slerp(desired, minf(1.0, delta * 4.0)).normalized()
 		b["pos"] = (b["pos"] as Vector2) + (b["dir"] as Vector2) * BULLET_SPEED * delta
 		b["traveled"] = (b["traveled"] as float) + BULLET_SPEED * delta
 		b["node"].position = b["pos"] as Vector2
 		b["node"].rotation += delta * 16.0
 
 		var hit := false
+		var hit_set: Array = b["hit_set"]
+		var pierce: bool = b.get("pierce", false)
 		for e in enemies:
+			if hit_set.has(e): continue
 			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < (e["radius"] as float) + BULLET_R:
 				e["hp"] -= b["dmg"]
 				e["flash"] = 0.12
 				hit = true
+				if pierce:
+					hit_set.append(e)
+				var explode_r: float = b.get("explode_r", 0.0)
+				if explode_r > 0.0:
+					_explode_at(b["pos"] as Vector2, b["dmg"] as int, explode_r, b["col"] as Color, e)
 				break
 
-		if hit or (b["traveled"] as float) >= BULLET_RANGE:
+		if (hit and not pierce) or (b["traveled"] as float) >= BULLET_RANGE:
 			b["node"].queue_free()
 			to_remove.append(i)
 
@@ -639,6 +815,26 @@ func _update_bullets(delta: float) -> void:
 	for e in dead:
 		_on_enemy_death(e)
 
+func _explode_at(pos: Vector2, dmg: int, radius: float, col: Color, exclude: Dictionary) -> void:
+	for e in enemies:
+		if e == exclude: continue
+		if pos.distance_to(e["pos"] as Vector2) < radius:
+			e["hp"] -= dmg
+			e["flash"] = 0.12
+	_spawn_death_particles(pos, col, radius * 0.35)
+	var ring := Line2D.new()
+	ring.width = 2.0
+	ring.default_color = col
+	for p in _make_ring_points(8.0, 1.0):
+		ring.add_point(p)
+	ring.position = pos
+	add_child(ring)
+	var tw := ring.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2.ONE * (radius / 8.0), 0.25)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.25)
+	tw.chain().tween_callback(ring.queue_free)
+
 func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
@@ -647,6 +843,8 @@ func _on_enemy_death(e: Dictionary) -> void:
 		_spawn_char_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	elif randf() < HEAL_ITEM_CHANCE:
 		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
+	elif randf() < WEAPON_ITEM_CHANCE:
+		_spawn_weapon_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
 	enemies.erase(e)
 
@@ -699,6 +897,12 @@ func _spawn_heal_item(pos: Vector2) -> void:
 	add_child(node)
 	items.append({ "type": "heal", "subtype": "", "pos": pos, "node": node })
 
+func _spawn_weapon_item(pos: Vector2) -> void:
+	var node := _make_rune_pickup(Color(1.0, 0.85, 0.4), ITEM_R * 1.1, 8, 0.4, 3.5)
+	node.position = pos
+	add_child(node)
+	items.append({ "type": "weapon", "subtype": "", "pos": pos, "node": node })
+
 # 弾と共通の「ルーン＋グロー」言語でアイテムを表現（欠片=控えめ・キャラアイテム=豪華に）
 func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: float, spin_speed: float) -> Node2D:
 	var node := Node2D.new()
@@ -744,6 +948,12 @@ func _update_items() -> void:
 				it["node"].queue_free()
 				to_remove.append(i)
 				player_hp = mini(PLAYER_HP_MAX, player_hp + HEAL_AMOUNT)
+				break
+			elif it["type"] == "weapon":
+				Sfx.play_item()
+				it["node"].queue_free()
+				to_remove.append(i)
+				_start_weapon_select()
 				break
 	for i in range(to_remove.size() - 1, -1, -1):
 		items.remove_at(to_remove[i])
@@ -849,6 +1059,97 @@ func _apply_weapon(subtype: String) -> void:
 		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
 		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
 		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
+
+func _start_weapon_select() -> void:
+	# 属性武器の取得/強化選択（6種類中、上限未満のものから最大3択）
+	var pool: Array[String] = []
+	for id in ATTR_WEAPON_DATA:
+		if (weapon_levels[id] as int) < ATTR_WEAPON_MAX_LEVEL:
+			pool.append(id)
+	if pool.is_empty(): return
+	pool.shuffle()
+	var choices: Array[String] = []
+	for c in pool.slice(0, mini(3, pool.size())): choices.append(c)
+
+	game_state = "upgrade_select"
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.size  = Vector2(W, H)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(dim)
+
+	var title := _make_label("紋章の武器を選択", 22, Vector2(W * 0.5 - 100, H * 0.18))
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	layer.add_child(title)
+
+	var card_w := 160.0
+	var gap    := 16.0
+	var total  := card_w * float(choices.size()) + gap * float(choices.size() - 1)
+	var start_x := (W - total) * 0.5
+
+	for ci in range(choices.size()):
+		var id       := choices[ci]
+		var wdata: Dictionary = ATTR_WEAPON_DATA[id]
+		var accent: Color = wdata["col"]
+		var level: int = weapon_levels[id] as int
+		var cx := start_x + ci * (card_w + gap)
+		var cy := H * 0.30
+
+		var card := Button.new()
+		card.size = Vector2(card_w, 180)
+		card.position = Vector2(cx, cy)
+		card.text = ""
+		if jp_font:
+			card.add_theme_font_override("font", jp_font)
+		card.add_theme_font_size_override("font_size", 14)
+
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.05, 0.05, 0.11, 0.9)
+		sb.set_corner_radius_all(12)
+		sb.set_border_width_all(2)
+		sb.border_color = accent
+		sb.shadow_color = Color(accent.r, accent.g, accent.b, 0.45)
+		sb.shadow_size = 10
+		card.add_theme_stylebox_override("normal", sb)
+		var sb_hover := sb.duplicate() as StyleBoxFlat
+		sb_hover.bg_color = Color(0.1, 0.1, 0.18, 0.95)
+		card.add_theme_stylebox_override("hover", sb_hover)
+		card.add_theme_stylebox_override("pressed", sb_hover)
+		card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		layer.add_child(card)
+
+		var icon := Polygon2D.new()
+		icon.polygon = _make_star_pts(4, 20.0, 0.4)
+		icon.color = accent
+		icon.position = Vector2(cx + card_w * 0.5, cy + 40)
+		layer.add_child(icon)
+		var icon_tw := icon.create_tween()
+		icon_tw.set_loops()
+		icon_tw.tween_property(icon, "rotation", TAU, 4.0).from(0.0)
+
+		var head := _make_label(wdata["name"] as String, 15, Vector2(cx + 10, cy + 78))
+		head.custom_minimum_size = Vector2(card_w - 20, 40)
+		head.autowrap_mode = TextServer.AUTOWRAP_WORD
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		head.add_theme_color_override("font_color", accent)
+		layer.add_child(head)
+
+		var desc_text := "NEW！取得" if level == 0 else ("Lv.%d → %d" % [level, level + 1])
+		var desc := _make_label(desc_text, 13, Vector2(cx + 10, cy + 130))
+		desc.custom_minimum_size = Vector2(card_w - 20, 30)
+		desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+		layer.add_child(desc)
+
+		card.pressed.connect(func():
+			weapon_levels[id] = mini(ATTR_WEAPON_MAX_LEVEL, (weapon_levels[id] as int) + 1)
+			layer.queue_free()
+			game_state = "battle"
+		)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
