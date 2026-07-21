@@ -589,9 +589,9 @@ func _update_allies(delta: float) -> void:
 
 	for a in allies:
 		match a["shape"]:
-			"circle", "double_circle":                    circles.append(a)
-			"triangle", "square", "hexagram", "octagram": mids.append(a)
-			"star", "decagram":                           stars_a.append(a)
+			"circle", "circle_mid", "double_circle":                          circles.append(a)
+			"triangle", "triangle_mid", "square", "square_mid", "hexagram", "octagram": mids.append(a)
+			"star", "decagram":                                               stars_a.append(a)
 
 	_position_ring(circles, ALLY_OUTER_R, delta, 0.0)
 	_position_ring(mids,    ALLY_MID_R,   delta, PI / 3.0)
