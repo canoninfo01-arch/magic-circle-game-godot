@@ -1,6 +1,7 @@
 extends Node2D
 
 const _Shapes = preload("res://scripts/Shapes.gd")
+const _Sigils = preload("res://scripts/Sigils.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 画面サイズ（project.godot 固定値を直接参照）
@@ -87,6 +88,9 @@ const DRAW_DURATION    := 8.0
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
 const DRAW_BRUSH_R     := 18.0
+# 判定半径を絶対pxではなく紋章サイズに対する比率で持つ（tierごとにguide_scaleが変わっても
+# 内側の小さい輪郭が相対的に緩くならないようにするため。2026-07-20：ペン太さ再設計）
+const BRUSH_RATIO      := DRAW_BRUSH_R / DRAW_GUIDE_R
 
 const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed"]
 
@@ -95,17 +99,14 @@ const SHAPE_DATA := {
 	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
 	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
 	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
-	# 進化形態（2体合体で誕生）
+	# tier2紋章（中間形態）。数値は仮置き——基本形と上位形の中間。バランス調整は別パスで行う（プラン§6）
+	"circle_mid":    { "color": Color(0.25, 0.65, 1.0),  "bullets": 4,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 55  },
+	"triangle_mid":  { "color": Color(1.0,  0.28, 0.28), "bullets": 6,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 85  },
+	"square_mid":    { "color": Color(0.8,  0.52, 0.15), "bullets": 0,  "speed_m": 1.0, "kb_r": 1.2, "hp_base": 135 },
+	# tier3紋章（上位形態。旧・合体進化形の見た目/ステータスをそのまま流用）
 	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
 	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
 	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
-}
-
-# 合体進化マップ（このキーにある形だけが合体できる）
-const EVOLVE_MAP := {
-	"circle":   "double_circle",
-	"triangle": "hexagram",
-	"square":   "octagram",
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -125,11 +126,11 @@ const ATTR_WEAPON_DATA := {
 	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 75.0 },
 }
 
-# 進化形も基礎属性として扱う（合体後も同じ属性武器を使える）
+# tier2/3の紋章形態も基礎属性として扱う（どの形態でも同じ属性武器を使える）
 const SHAPE_TO_ATTR := {
-	"circle": "circle", "double_circle": "circle",
-	"triangle": "triangle", "hexagram": "triangle",
-	"square": "square", "octagram": "square",
+	"circle": "circle", "circle_mid": "circle", "double_circle": "circle",
+	"triangle": "triangle", "triangle_mid": "triangle", "hexagram": "triangle",
+	"square": "square", "square_mid": "square", "octagram": "square",
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -196,18 +197,23 @@ var items : Array[Dictionary] = []
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var draw_shape       := "circle"
+var draw_shape       := "circle"          # 属性名（circle/triangle/square）。武器等の参照キーとして維持
+var draw_sigil_id    := "circle_1"        # 装備中の紋章id（Sigils.SIGIL_DATA参照）。描画ガイド・召喚結果を決める
+var current_guide_r  := DRAW_GUIDE_R      # 装備tierのguide_scaleを反映した、今セッションの紋章半径
+var brush_ratio_mult := 1.0               # ペン太さの倍率。将来アイテムで調整する余地として用意（現状は常に1.0）
 var draw_timer       := 0.0
 var coating_count    := 0
 var coating_power    := 0
 var trace_pts        : Array[Vector2] = []
-var sample_pts       : Array[Vector2] = []
+var sample_contours  : Array = []         # Array[Array[Vector2]]。輪郭ごと（外形/内側）にカバー率を判定する
 var draw_touch_id    : int = -1
 
-var draw_layer    : CanvasLayer = null
-var trace_line    : Line2D      = null
-var guide_line    : Line2D      = null
-var guide_glow    : Line2D      = null
+var draw_layer      : CanvasLayer = null
+var trace_line      : Line2D      = null
+var guide_line      : Line2D      = null
+var guide_glow      : Line2D      = null
+var guide_line_inner: Line2D      = null  # tier2/3の内側輪郭（点/星）用。tier1では非表示
+var guide_glow_inner: Line2D      = null
 var guide_base_color := Color.WHITE
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
@@ -337,10 +343,12 @@ func _build_draw_layer() -> void:
 	draw_layer.add_child(dim)
 
 	# 背景の装飾リング（ゆっくり逆回転しあう2本。描画シーンを「魔法陣」らしくリッチにする）
+	# 2026-07-20：紋章はtierごとにサイズが変わる（Sigils.MAX_GUIDE_SCALEまで）が、この装飾は
+	# 初期化時の1回しか作らないため、最大tierを見込んだサイズで固定しておく（毎回作り直さない）
 	var deco_outer := Line2D.new()
 	deco_outer.width = 2.0
 	deco_outer.default_color = Color(0.6, 0.8, 1.0, 0.25)
-	for p in _make_ring_points(DRAW_GUIDE_R * 1.55, 1.0):
+	for p in _make_ring_points(DRAW_GUIDE_R * _Sigils.MAX_GUIDE_SCALE * 1.55, 1.0):
 		deco_outer.add_point(p)
 	deco_outer.position = Vector2(W * 0.5, H * 0.5)
 	draw_layer.add_child(deco_outer)
@@ -351,7 +359,7 @@ func _build_draw_layer() -> void:
 	var deco_inner := Line2D.new()
 	deco_inner.width = 2.0
 	deco_inner.default_color = Color(0.6, 0.8, 1.0, 0.18)
-	for p in _make_ring_points(DRAW_GUIDE_R * 1.3, 1.0):
+	for p in _make_ring_points(DRAW_GUIDE_R * _Sigils.MAX_GUIDE_SCALE * 1.3, 1.0):
 		deco_inner.add_point(p)
 	deco_inner.position = Vector2(W * 0.5, H * 0.5)
 	draw_layer.add_child(deco_inner)
@@ -368,6 +376,19 @@ func _build_draw_layer() -> void:
 	guide_line.width = 6.0
 	guide_line.default_color = Color(1.0, 1.0, 1.0, 0.65)
 	draw_layer.add_child(guide_line)
+
+	# tier2/3の内側輪郭（点/星）用。tier1装備時はvisible=falseのまま使われない
+	guide_glow_inner = Line2D.new()
+	guide_glow_inner.width = 22.0
+	guide_glow_inner.default_color = Color(1.0, 1.0, 1.0, 0.15)
+	guide_glow_inner.visible = false
+	draw_layer.add_child(guide_glow_inner)
+
+	guide_line_inner = Line2D.new()
+	guide_line_inner.width = 6.0
+	guide_line_inner.default_color = Color(1.0, 1.0, 1.0, 0.65)
+	guide_line_inner.visible = false
+	draw_layer.add_child(guide_line_inner)
 
 	trace_line = Line2D.new()
 	trace_line.width = 5.0
@@ -1157,6 +1178,7 @@ func _start_weapon_select() -> void:
 func _start_drawing(suggested_shape: String) -> void:
 	game_state = "drawing"
 	draw_shape = suggested_shape
+	draw_sigil_id = GameData.get_equipped_sigil(suggested_shape)
 	draw_timer = DRAW_DURATION
 	coating_count = 0
 	coating_power = 0
@@ -1177,13 +1199,32 @@ func _start_drawing(suggested_shape: String) -> void:
 func _refresh_draw_guide() -> void:
 	var cx := W * 0.5
 	var cy := H * 0.5
-	sample_pts = _Shapes.make_sample_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
-	var guide_pts := _Shapes.make_guide_pts(draw_shape, cx, cy, DRAW_GUIDE_R)
+	var sigil_data := _Sigils.get_data(draw_sigil_id)
+	var pattern: Dictionary = sigil_data.get("guide_pattern", {"outer": draw_shape, "inner": ""})
+	var guide_scale: float = sigil_data.get("guide_scale", 1.0)
+	current_guide_r = DRAW_GUIDE_R * guide_scale
+
+	sample_contours = _Shapes.make_sample_contours(pattern, cx, cy, current_guide_r)
+	var contours := _Shapes.make_guide_contours(pattern, cx, cy, current_guide_r)
+
 	guide_line.clear_points()
 	guide_glow.clear_points()
-	for p in guide_pts:
+	for p in contours[0]:
 		guide_line.add_point(p)
 		guide_glow.add_point(p)
+
+	if contours.size() > 1:
+		guide_line_inner.clear_points()
+		guide_glow_inner.clear_points()
+		for p in contours[1]:
+			guide_line_inner.add_point(p)
+			guide_glow_inner.add_point(p)
+		guide_line_inner.visible = true
+		guide_glow_inner.visible = true
+	else:
+		guide_line_inner.visible = false
+		guide_glow_inner.visible = false
+
 	var shape_colors := {
 		"circle":   Color(0.5, 0.7, 1.0, 0.8),
 		"triangle": Color(1.0, 0.5, 0.5, 0.8),
@@ -1200,13 +1241,28 @@ func _apply_guide_intensity() -> void:
 	guide_line.width = 6.0 + boost * 8.0
 	guide_glow.default_color = Color(guide_base_color.r, guide_base_color.g, guide_base_color.b, 0.18 + boost * 0.35)
 	guide_glow.width = 22.0 + boost * 24.0
+	if guide_line_inner.visible:
+		guide_line_inner.default_color = guide_line.default_color
+		guide_line_inner.width = guide_line.width
+		guide_glow_inner.default_color = guide_glow.default_color
+		guide_glow_inner.width = guide_glow.width
+
+# 輪郭ごとの判定半径（外形/内側それぞれのサイズに比例）。内側の小さい輪郭は自動的に判定も厳しくなる
+func _brush_radius_for(contour_r: float) -> float:
+	return contour_r * BRUSH_RATIO * brush_ratio_mult
+
+func _current_brush_radii() -> Array[float]:
+	var radii: Array[float] = [_brush_radius_for(current_guide_r)]
+	if sample_contours.size() > 1:
+		radii.append(_brush_radius_for(current_guide_r * 0.42))
+	return radii
 
 func _update_drawing(delta: float) -> void:
 	draw_timer -= delta
 	draw_timer_lbl.text = "%.1f" % maxf(0.0, draw_timer)
 
-	if not trace_pts.is_empty() and sample_pts.size() > 0:
-		var cov := _calc_coverage(trace_pts, sample_pts)
+	if not trace_pts.is_empty() and not sample_contours.is_empty():
+		var cov := _calc_coverage_contours(trace_pts, sample_contours)
 		cov_lbl.text = "%d%%" % int(cov * 100)
 		trace_line.modulate = _cov_color(cov)
 	else:
@@ -1308,14 +1364,17 @@ func _confirm_summon() -> void:
 func _end_drawing() -> void:
 	draw_layer.visible = false
 	game_state = "battle"
-	_add_ally(draw_shape, coating_power)
+	var sigil_data := _Sigils.get_data(draw_sigil_id)
+	var spawn_shape: String = sigil_data.get("spawn_shape", draw_shape)
+	_add_ally(spawn_shape, coating_power)
+	if (sigil_data.get("tier", 1) as int) >= 2:
+		_show_evolve_flash(spawn_shape, player_pos)
 
 func _add_ally(shape: String, power: int, burst: bool = true) -> void:
 	if allies.size() >= MAX_ALLIES:
-		if not _try_merge():
-			var worst := _most_damaged_ally()
-			if not worst.is_empty():
-				_remove_ally(worst)
+		var worst := _most_damaged_ally()
+		if not worst.is_empty():
+			_remove_ally(worst)
 	_spawn_ally_at(shape, power, player_pos, burst)
 
 func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true) -> void:
@@ -1349,7 +1408,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 		"kb_resist": kb_r
 	})
 	if allies.size() == 3:
-		_show_hint("merge", "仲間が10体になると合体進化！", Vector2(W * 0.5 - 110, H * 0.20))
+		_show_hint("merge", "出撃前に装備した紋章で強さが決まる！", Vector2(W * 0.5 - 110, H * 0.20))
 	if burst:
 		_summon_burst(pos, col, power)
 
@@ -1452,29 +1511,6 @@ func _make_ring_points(radius: float, arc_frac: float) -> PackedVector2Array:
 		pts.append(Vector2(cos(a), sin(a)) * radius)
 	return pts
 
-func _try_merge() -> bool:
-	var groups: Dictionary = {}
-	for a in allies:
-		var s: String = a["shape"] as String
-		if not EVOLVE_MAP.has(s): continue
-		if not groups.has(s): groups[s] = []
-		(groups[s] as Array).append(a)
-	for shape in groups:
-		var grp: Array = groups[shape] as Array
-		if grp.size() >= 2:
-			var a1: Dictionary = grp[0] as Dictionary
-			var a2: Dictionary = grp[1] as Dictionary
-			var merged_power: int  = (a1["coating"] as int) + (a2["coating"] as int)
-			var merge_pos: Vector2 = ((a1["node"] as Node2D).position + (a2["node"] as Node2D).position) / 2.0
-			_remove_ally(a1)
-			_remove_ally(a2)
-			var evolved: String = EVOLVE_MAP[shape] as String
-			_spawn_ally_at(evolved, merged_power, merge_pos)
-			_show_evolve_flash(evolved, merge_pos)
-			Sfx.play_evolve()
-			return true
-	return false
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # タッチ入力
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1528,8 +1564,8 @@ func _handle_draw_input(event: InputEvent) -> void:
 		_add_to_trace(event.position)
 
 func _evaluate_lap() -> void:
-	if trace_pts.is_empty() or sample_pts.is_empty(): return
-	var cov := _calc_coverage(trace_pts, sample_pts)
+	if trace_pts.is_empty() or sample_contours.is_empty(): return
+	var cov := _calc_coverage_contours(trace_pts, sample_contours)
 	trace_pts.clear()
 	trace_line.clear_points()
 	trace_line.modulate = Color.WHITE
@@ -1601,7 +1637,10 @@ func _show_wave_flash(wave: int) -> void:
 	tween.tween_callback(lbl.queue_free)
 
 func _show_evolve_flash(evolved: String, pos: Vector2) -> void:
-	var names := { "double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！" }
+	var names := {
+		"circle_mid": "紋章・中位！", "triangle_mid": "紋章・中位！", "square_mid": "紋章・中位！",
+		"double_circle": "二重丸！", "hexagram": "六芒星！", "octagram": "八芒星！",
+	}
 	var txt: String = names.get(evolved, "EVOLVE!") as String
 	var lbl := _make_label(txt, 32, pos - Vector2(45, 20))
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
@@ -1712,15 +1751,26 @@ func _add_to_trace(pos: Vector2) -> void:
 				trace_pts.append(prev.lerp(pos, float(i) / float(n)))
 	trace_pts.append(pos)
 
-func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2]) -> float:
+func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2], brush_r: float = DRAW_BRUSH_R) -> float:
 	if s_pts.is_empty() or t_pts.is_empty(): return 0.0
 	var covered := 0
 	for sp in s_pts:
 		for tp in t_pts:
-			if tp.distance_to(sp) < DRAW_BRUSH_R:
+			if tp.distance_to(sp) < brush_r:
 				covered += 1
 				break
 	return float(covered) / float(s_pts.size())
+
+# 入れ子紋章（外形+内側）用：輪郭ごとに個別採点し、最小値を取る。
+# 単純結合だと内側の小さい輪郭が「外形をなぞっただけ」で不当にカバー率を稼いでしまうため
+func _calc_coverage_contours(t_pts: Array[Vector2], contours: Array) -> float:
+	if contours.is_empty(): return 0.0
+	var radii := _current_brush_radii()
+	var worst := 1.0
+	for i in contours.size():
+		var r: float = radii[i] if i < radii.size() else radii[0]
+		worst = minf(worst, _calc_coverage(t_pts, contours[i], r))
+	return worst
 
 func _nearest_enemy(from: Vector2) -> Dictionary:
 	var best : Dictionary = {}
@@ -1833,6 +1883,9 @@ func _make_shape_polygon(shape: String, size: float) -> PackedVector2Array:
 		"circle":        return _make_ngon(12, size)
 		"triangle":      return _make_ngon(3, size)
 		"square":        return _make_ngon(4, size)
+		"circle_mid":    return _make_ngon(18, size * 1.2)
+		"triangle_mid":  return _make_star_pts(3, size * 1.25, 0.6)
+		"square_mid":    return _make_star_pts(4, size * 1.25, 0.6)
 		"double_circle": return _make_ngon(24, size * 1.5)
 		"hexagram":      return _make_star_pts(6, size, 0.5)
 		"octagram":      return _make_star_pts(8, size, 0.42)

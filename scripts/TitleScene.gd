@@ -63,4 +63,4 @@ func _make_centered_label(txt: String, font_size: int, y: float, box_h: float) -
 
 func _unhandled_input(event: InputEvent) -> void:
 	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed):
-		get_tree().change_scene_to_file("res://scenes/BattleScene.tscn")
+		get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn")

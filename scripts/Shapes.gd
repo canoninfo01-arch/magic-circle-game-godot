@@ -39,6 +39,10 @@ static func make_guide_pts(shape: String, cx: float, cy: float, r: float) -> Pac
 				for j in range(seg):
 					pts.append(v[i].lerp(v[i + 1], float(j) / seg))
 			pts.append(v[0])
+		"dot":
+			for i in range(61):
+				var a := float(i) / 60.0 * TAU
+				pts.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
 	return pts
 
 # カバー率計算用のサンプル点（Array[Vector2]）
@@ -47,4 +51,23 @@ static func make_sample_pts(shape: String, cx: float, cy: float, r: float) -> Ar
 	var out: Array[Vector2] = []
 	for p in raw:
 		out.append(p)
+	return out
+
+# 入れ子紋章（外形＋内側）用：閉じた輪郭を複数返す。
+# pattern = {"outer": "circle"|"triangle"|"square", "inner": ""|"dot"|"star"}
+# 内側はouter半径の0.42倍（既存のstarのinner_ratio慣例に合わせる）
+static func make_guide_contours(pattern: Dictionary, cx: float, cy: float, r: float) -> Array:
+	var contours: Array = [make_guide_pts(pattern.get("outer", "circle") as String, cx, cy, r)]
+	var inner: String = pattern.get("inner", "") as String
+	if inner != "":
+		contours.append(make_guide_pts(inner, cx, cy, r * 0.42))
+	return contours
+
+static func make_sample_contours(pattern: Dictionary, cx: float, cy: float, r: float) -> Array:
+	var out: Array = []
+	for raw in make_guide_contours(pattern, cx, cy, r):
+		var pts: Array[Vector2] = []
+		for p in raw:
+			pts.append(p)
+		out.append(pts)
 	return out
