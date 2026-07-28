@@ -18,7 +18,6 @@ const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
 const ALLY_OUTER_R     := 68.0
 const ALLY_MID_R       := 46.0
-const ALLY_INNER_R     := 26.0
 const ALLY_BASE_SIZE   := 14.0
 
 # 召喚獣ドット絵（基本形のみ。進化形は引き続き幾何学図形）
@@ -44,9 +43,17 @@ const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
 
 const ENEMY_TYPES := {
-	"shard":      { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.7,  "spd_m": 1.35 },
+	# 2026-07-27：属性相性をはっきりさせるため、シャード（速い・脆い）とヴォイドマーク（遅い・硬い）を尖らせた
+	"shard":      { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.5,  "spd_m": 1.6  },
 	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(1.0, 0.5,  0.1),  "hp_m": 2.0,  "spd_m": 0.85 },
-	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 4.0,  "spd_m": 0.5  },
+	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
+}
+
+# 特定ウェーブ番号は単一タイプ強制（2026-07-27追加）。「このウェーブは火が輝く」等の山場を作る狙い。
+# countは通常式（6+wave_count*2）を使わず個別指定（void_markは1体が重いので少数精鋭にする）
+const WAVE_FORCED_TYPE := {
+	3: { "type": "shard",     "count": 12 },
+	5: { "type": "void_mark", "count": 4  },
 }
 
 # 敵ドット絵（VS基準：小さく・簡素・大量湧きでも視認性重視）
@@ -64,10 +71,12 @@ const ENEMY_SPRITE_CONTENT_RATIO := {
 	"void_mark": 0.83,
 }
 
-const FRAGMENT_THRESHOLD := 5
-const CHAR_ITEM_CHANCE  := 0.08  # 2026-07-18：召喚が頻発しすぎるとの指摘で0.15→0.08に減速
+const FRAGMENT_THRESHOLD_BASE := 5
+const CHAR_ITEM_CHANCE  := 0.05  # 2026-07-27：0.08→0.05にさらに減速（10体到達を遅くする狙い）
+const FIRST_CHAR_ITEM_GUARANTEE_KILLS := 3  # 2026-07-27：最初の1体は運任せにしない保証
 const HEAL_ITEM_CHANCE  := 0.05
 const HEAL_AMOUNT       := 2
+const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
 const WEAPON_ITEM_CHANCE := 0.12  # 2026-07-18：出現率が低すぎるとの指摘で0.06→0.12に増加
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
@@ -84,29 +93,31 @@ const ATTACK_INTERVAL       := 0.7
 const PLAYER_ATTACK_INTERVAL := 1.2
 const PLAYER_BULLET_DMG      := 4
 
-const DRAW_DURATION    := 8.0
+const DRAW_DURATION    := 6.5  # 2026-07-27：8.0から短縮（延長は欠片カードの新選択肢で対応）
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
-const DRAW_BRUSH_R     := 18.0
-# 判定半径を絶対pxではなく紋章サイズに対する比率で持つ（tierごとにguide_scaleが変わっても
-# 内側の小さい輪郭が相対的に緩くならないようにするため。2026-07-20：ペン太さ再設計）
-const BRUSH_RATIO      := DRAW_BRUSH_R / DRAW_GUIDE_R
+const DRAW_BRUSH_R     := 18.0  # 2026-07-27：ブラシ半径は紋章サイズに関わらず絶対px固定（tierが上がっても許容範囲を広げない）
+const MISS_GAIN        := 3  # 2026-07-27：MISSでも召喚不能にならないよう最低限の加点を入れる
+const COATING_DMG_K    := 0.005  # 属性武器ダメージの厚塗り係数（1.0 + coating_power×K、要調整）
 
-const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed"]
+const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "draw_time"]  # 2026-07-27：描画時間アップを追加、4種から3択
 
 const SHAPE_DATA := {
 	# 役割：水=速攻・機動／火=重火力・鈍足／土=盾・耐久（2026-07-12 属性名と役割の対応を再整理。「角の数=弾の数」ルールは廃止）
-	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 3,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 35  },
-	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 4,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 55  },
-	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 0,  "speed_m": 1.0, "kb_r": 0.9, "hp_base": 80  },
-	# tier2紋章（中間形態）。数値は仮置き——基本形と上位形の中間。バランス調整は別パスで行う（プラン§6）
-	"circle_mid":    { "color": Color(0.25, 0.65, 1.0),  "bullets": 4,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 55  },
-	"triangle_mid":  { "color": Color(1.0,  0.28, 0.28), "bullets": 6,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 85  },
-	"square_mid":    { "color": Color(0.8,  0.52, 0.15), "bullets": 0,  "speed_m": 1.0, "kb_r": 1.2, "hp_base": 135 },
+	# dmg_reduction：被ダメージ軽減率（2026-07-23追加、仮数値）。属性のみで決まり、tierでは変化しない
+	# bullets：2026-07-27確定、属性のみで決まりtierでは変化しない（基礎攻撃を地味にして属性武器を目立たせる狙い）
+	# tierの伸びはhp_baseの底上げと、厚塗り獲得ポイント・属性武器のtier保証倍率（Sigils.gd）が担う
+	"circle":        { "color": Color(0.3,  0.7,  1.0),  "bullets": 1,  "speed_m": 1.6, "dmg_reduction": 0.0,  "hp_base": 35  },
+	"triangle":      { "color": Color(1.0,  0.35, 0.35), "bullets": 2,  "speed_m": 0.7, "dmg_reduction": 0.15, "hp_base": 55  },
+	"square":        { "color": Color(0.85, 0.6,  0.2),  "bullets": 0,  "speed_m": 1.0, "dmg_reduction": 0.3,  "hp_base": 80  },
+	# tier2紋章（中間形態）。HP数値は仮置き——基本形と上位形の中間。バランス調整は別パスで行う（プラン§6）
+	"circle_mid":    { "color": Color(0.25, 0.65, 1.0),  "bullets": 1,  "speed_m": 1.6, "dmg_reduction": 0.0,  "hp_base": 55  },
+	"triangle_mid":  { "color": Color(1.0,  0.28, 0.28), "bullets": 2,  "speed_m": 0.7, "dmg_reduction": 0.15, "hp_base": 85  },
+	"square_mid":    { "color": Color(0.8,  0.52, 0.15), "bullets": 0,  "speed_m": 1.0, "dmg_reduction": 0.3,  "hp_base": 135 },
 	# tier3紋章（上位形態。旧・合体進化形の見た目/ステータスをそのまま流用）
-	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 6,  "speed_m": 1.6, "kb_r": 0.3, "hp_base": 80  },
-	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 8,  "speed_m": 0.7, "kb_r": 0.6, "hp_base": 120 },
-	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 0,  "speed_m": 0.7, "kb_r": 1.5, "hp_base": 200 },
+	"double_circle": { "color": Color(0.2,  0.6,  1.0),  "bullets": 1,  "speed_m": 1.6, "dmg_reduction": 0.0,  "hp_base": 80  },
+	"hexagram":      { "color": Color(1.0,  0.2,  0.2),  "bullets": 2,  "speed_m": 0.7, "dmg_reduction": 0.15, "hp_base": 120 },
+	"octagram":      { "color": Color(0.75, 0.45, 0.1),  "bullets": 0,  "speed_m": 0.7, "dmg_reduction": 0.3,  "hp_base": 200 },
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -131,6 +142,13 @@ const SHAPE_TO_ATTR := {
 	"circle": "circle", "circle_mid": "circle", "double_circle": "circle",
 	"triangle": "triangle", "triangle_mid": "triangle", "hexagram": "triangle",
 	"square": "square", "square_mid": "square", "octagram": "square",
+}
+
+# 属性武器ダメージのtier保証倍率を引くための逆引き（2026-07-27追加）
+const SHAPE_TO_TIER := {
+	"circle": 1, "triangle": 1, "square": 1,
+	"circle_mid": 2, "triangle_mid": 2, "square_mid": 2,
+	"double_circle": 3, "hexagram": 3, "octagram": 3,
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -201,11 +219,13 @@ var draw_shape       := "circle"          # 属性名（circle/triangle/square�
 var draw_sigil_id    := "circle_1"        # 装備中の紋章id（Sigils.SIGIL_DATA参照）。描画ガイド・召喚結果を決める
 var current_guide_r  := DRAW_GUIDE_R      # 装備tierのguide_scaleを反映した、今セッションの紋章半径
 var brush_ratio_mult := 1.0               # ペン太さの倍率。将来アイテムで調整する余地として用意（現状は常に1.0）
+var draw_time_bonus  := 0.0               # 欠片カード「描画時間アップ」で加算される秒数（2026-07-27）
 var draw_timer       := 0.0
 var coating_count    := 0
 var coating_power    := 0
 var trace_pts        : Array[Vector2] = []
-var sample_contours  : Array = []         # Array[Array[Vector2]]。輪郭ごと（外形/内側）にカバー率を判定する
+var sample_contours  : Array = []         # Array[Array[Vector2]]。輪郭ごとにカバー率を判定する
+var contour_weights  : Array[float] = []  # sample_contoursと対応する採点の重み（合計1.0想定）
 var draw_touch_id    : int = -1
 
 var draw_layer      : CanvasLayer = null
@@ -230,8 +250,12 @@ var time_lbl      : Label       = null
 var ally_lbl      : Label       = null
 var frag_lbl      : Label       = null
 var hp_bar_fill   : ColorRect   = null
+var frag_bar_fill : ColorRect   = null
 var hp_bar_w      := 130.0
 var fragment_count := 0
+var fragment_threshold := FRAGMENT_THRESHOLD_BASE  # 2026-07-27：発動のたびに引き上げる（後半のカード頻発を抑制）
+var kills_without_char_item := 0
+var got_first_char_item := false
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -285,7 +309,7 @@ func _build_ui() -> void:
 	ui_layer.layer = 10
 	add_child(ui_layer)
 
-	var stats_panel := _make_glow_panel(Vector2(6, 6), Vector2(150, 92), Color(0.5, 0.8, 1.0, 0.5))
+	var stats_panel := _make_glow_panel(Vector2(6, 6), Vector2(150, 100), Color(0.5, 0.8, 1.0, 0.5))
 	ui_layer.add_child(stats_panel)
 
 	var time_panel := _make_glow_panel(Vector2(W - 84, 6), Vector2(78, 34), Color(1.0, 0.9, 0.5, 0.5))
@@ -312,8 +336,20 @@ func _build_ui() -> void:
 	ally_lbl = _make_label("仲間: 0", 14, Vector2(14, 50))
 	ui_layer.add_child(ally_lbl)
 
-	frag_lbl = _make_label("欠片: 0/%d" % FRAGMENT_THRESHOLD, 14, Vector2(14, 72))
+	frag_lbl = _make_label("欠片: 0/%d" % fragment_threshold, 14, Vector2(14, 72))
 	ui_layer.add_child(frag_lbl)
+
+	var frag_bar_bg := ColorRect.new()
+	frag_bar_bg.color = Color(0.08, 0.08, 0.05, 0.8)
+	frag_bar_bg.position = Vector2(14, 88)
+	frag_bar_bg.size = Vector2(hp_bar_w, 6)
+	ui_layer.add_child(frag_bar_bg)
+
+	frag_bar_fill = ColorRect.new()
+	frag_bar_fill.color = Color(0.4, 1.0, 0.55, 0.95)
+	frag_bar_fill.position = Vector2(14, 88)
+	frag_bar_fill.size = Vector2(0.0, 6)
+	ui_layer.add_child(frag_bar_fill)
 
 func _make_glow_panel(pos: Vector2, size: Vector2, border_col: Color) -> Panel:
 	var panel := Panel.new()
@@ -493,9 +529,11 @@ func _spawn_enemies(delta: float) -> void:
 	_spawn_one_enemy()
 
 func _trigger_wave() -> void:
-	var count := 6 + wave_count * 2
+	var forced_data: Dictionary = WAVE_FORCED_TYPE.get(wave_count, {}) as Dictionary
+	var forced: String = forced_data.get("type", "") as String
+	var count: int = forced_data.get("count", 6 + wave_count * 2) as int
 	for _i in range(count):
-		_spawn_one_enemy()
+		_spawn_one_enemy(forced)
 	_show_wave_flash(wave_count)
 
 func _pick_enemy_type() -> String:
@@ -509,9 +547,9 @@ func _pick_enemy_type() -> String:
 		return "shard"
 	return "shard"
 
-func _spawn_one_enemy() -> void:
+func _spawn_one_enemy(forced_type: String = "") -> void:
 	var pos: Vector2  = _random_edge_pos()
-	var etype: String = _pick_enemy_type()
+	var etype: String = forced_type if forced_type != "" else _pick_enemy_type()
 	var edata: Dictionary = ENEMY_TYPES[etype]
 	var hp: int   = int((ENEMY_HP_BASE + elapsed_time * 0.8) * (edata["hp_m"] as float))
 	var spd: float = (ENEMY_SPEED_BASE + elapsed_time * 0.5) * (edata["spd_m"] as float)
@@ -570,7 +608,8 @@ func _update_enemies(delta: float) -> void:
 			if (e["pos"] as Vector2).distance_to(a["node"].position) < ALLY_BASE_SIZE + (e["radius"] as float):
 				var kb_dir: Vector2 = ((e["pos"] as Vector2) - a["node"].position).normalized()
 				e["kb"] = (e["kb"] as Vector2) + kb_dir * 180.0
-				a["hp"] -= 8
+				var reduction: float = a["dmg_reduction"] as float
+				a["hp"] -= 8 * (1.0 - reduction)
 				hit_ally = a
 				break
 		if not hit_ally.is_empty() and hit_ally["hp"] <= 0:
@@ -585,17 +624,14 @@ func _update_enemies(delta: float) -> void:
 func _update_allies(delta: float) -> void:
 	var circles : Array[Dictionary] = []
 	var mids    : Array[Dictionary] = []
-	var stars_a : Array[Dictionary] = []
 
 	for a in allies:
 		match a["shape"]:
 			"circle", "circle_mid", "double_circle":                          circles.append(a)
 			"triangle", "triangle_mid", "square", "square_mid", "hexagram", "octagram": mids.append(a)
-			"star", "decagram":                                               stars_a.append(a)
 
 	_position_ring(circles, ALLY_OUTER_R, delta, 0.0)
 	_position_ring(mids,    ALLY_MID_R,   delta, PI / 3.0)
-	_position_ring(stars_a, ALLY_INNER_R, delta, PI * 2.0 / 3.0)
 
 	for a in allies:
 		a["attack_timer"] = (a["attack_timer"] as float) - delta
@@ -629,11 +665,19 @@ func _update_ally_weapons(a: Dictionary, delta: float) -> void:
 			_fire_attr_weapon(a, id, wdata, level)
 			timers[id] = (wdata["cooldown"] as float) / (1.0 + float(level - 1) * 0.15)
 
+# 属性武器ダメージのtier保証倍率×厚塗り係数（2026-07-27）。基礎弾攻撃には適用しない
+func _ally_weapon_tier_mult(a: Dictionary) -> float:
+	var tier: int = a.get("tier", 1) as int
+	var tier_mult: float = _Sigils.TIER_DMG_MULT.get(tier, 1.0) as float
+	var coating: int = a.get("coating", 0) as int
+	var coating_mult := 1.0 + float(coating) * COATING_DMG_K
+	return tier_mult * coating_mult
+
 func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int) -> void:
 	var ally_pos: Vector2 = a["node"].position
 	var nearest := _nearest_enemy(ally_pos)
 	if nearest.is_empty(): return
-	var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float))
+	var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float) * _ally_weapon_tier_mult(a))
 	var col: Color = wdata["col"]
 	match wdata["pattern"] as String:
 		"projectile":
@@ -665,7 +709,7 @@ func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: i
 
 	orb["hit_cd"] = maxf(0.0, (orb["hit_cd"] as float) - delta)
 	if (orb["hit_cd"] as float) <= 0.0:
-		var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float))
+		var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float) * _ally_weapon_tier_mult(a))
 		for e in enemies:
 			if world_pos.distance_to(e["pos"] as Vector2) < (e["radius"] as float) + 10.0:
 				e["hp"] = (e["hp"] as int) - dmg
@@ -788,6 +832,14 @@ func _remove_ally(a: Dictionary) -> void:
 			((a["orbiters"] as Dictionary)[id] as Dictionary)["node"].queue_free()
 	allies.erase(a)
 
+# 回復アイテムで生きてる仲間全員を最大HPの割合分だけ回復（2026-07-27追加）
+func _heal_allies(fraction: float) -> void:
+	for a in allies:
+		var max_hp: float = a["max_hp"] as float
+		var heal: float = ceil(max_hp * fraction)
+		var cur: float = a["hp"] as float
+		a["hp"] = minf(max_hp, cur + heal)
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 弾
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -860,7 +912,13 @@ func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
 	_spawn_fragment(e["pos"] as Vector2)
-	if randf() < CHAR_ITEM_CHANCE:
+	var force_char_item := false
+	if not got_first_char_item:
+		kills_without_char_item += 1
+		if kills_without_char_item >= FIRST_CHAR_ITEM_GUARANTEE_KILLS:
+			force_char_item = true
+	if force_char_item or randf() < CHAR_ITEM_CHANCE:
+		got_first_char_item = true
 		_spawn_char_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	elif randf() < HEAL_ITEM_CHANCE:
 		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
@@ -905,12 +963,12 @@ func _spawn_fragment(pos: Vector2) -> void:
 	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
 
 func _spawn_char_item(pos: Vector2) -> void:
-	var subtype: String = ["circle", "triangle", "square"][randi() % 3]
+	# 2026-07-27：属性は完全ランダムをやめ、拾った後にプレイヤーが選択する（敵の属性相性ができたため）
 	var node := _make_rune_pickup(Color(0.7, 0.4, 1.0), ITEM_R, 6, 0.45, 5.0)
 	node.position = pos
 	add_child(node)
-	items.append({ "type": "char", "subtype": subtype, "pos": pos, "node": node })
-	_show_hint("char_item", "図形を描いて仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
+	items.append({ "type": "char", "subtype": "", "pos": pos, "node": node })
+	_show_hint("char_item", "属性を選んで仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
 
 func _spawn_heal_item(pos: Vector2) -> void:
 	var node := _make_rune_pickup(Color(0.4, 1.0, 0.55), FRAGMENT_R * 1.2, 4, 0.4, 4.0)
@@ -954,21 +1012,23 @@ func _update_items() -> void:
 				it["node"].queue_free()
 				to_remove.append(i)
 				fragment_count += 1
-				if fragment_count >= FRAGMENT_THRESHOLD:
-					fragment_count -= FRAGMENT_THRESHOLD
+				if fragment_count >= fragment_threshold:
+					fragment_count -= fragment_threshold
+					fragment_threshold += 1  # 2026-07-27：発動のたびに次の閾値を引き上げる（後半のカード頻発を抑制）
 					_start_upgrade_select()
 				break
 			elif it["type"] == "char":
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
-				_start_drawing(it["subtype"])
+				_start_attr_select()
 				break
 			elif it["type"] == "heal":
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
 				player_hp = mini(PLAYER_HP_MAX, player_hp + HEAL_AMOUNT)
+				_heal_allies(ALLY_HEAL_FRACTION)
 				break
 			elif it["type"] == "weapon":
 				Sfx.play_item()
@@ -1006,11 +1066,13 @@ func _start_upgrade_select() -> void:
 		"atk_speed":  ["攻撃速度アップ", "+20% 攻撃速度"],
 		"damage":     ["ダメージアップ", "+30% 弾ダメージ"],
 		"move_speed": ["移動速度アップ", "+15% 移動速度"],
+		"draw_time":  ["描画時間アップ", "+1.5秒 描画時間"],
 	}
 	var accent_cols := {
 		"atk_speed":  Color(0.4, 1.0, 1.0),
 		"damage":     Color(1.0, 0.45, 0.3),
 		"move_speed": Color(0.5, 1.0, 0.6),
+		"draw_time":  Color(0.85, 0.6, 1.0),
 	}
 	var card_w := 160.0
 	var gap    := 16.0
@@ -1080,6 +1142,7 @@ func _apply_weapon(subtype: String) -> void:
 		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
 		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
 		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
+		"draw_time":  draw_time_bonus = draw_time_bonus + 1.5
 
 func _start_weapon_select() -> void:
 	# 属性武器の取得/強化選択（6種類中、上限未満のものから最大3択）
@@ -1172,6 +1235,102 @@ func _start_weapon_select() -> void:
 			game_state = "battle"
 		)
 
+# キャラアイテム取得時の属性選択（2026-07-27：完全ランダムから選択制に戻した）
+func _start_attr_select() -> void:
+	game_state = "attr_select"
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.55)
+	dim.size  = Vector2(W, H)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(dim)
+
+	var title := _make_label("属性を選ぶ", 22, Vector2(W * 0.5 - 70, H * 0.18))
+	title.add_theme_color_override("font_color", Color(0.85, 0.78, 1.0))
+	layer.add_child(title)
+
+	var attrs: Array[String] = ["circle", "triangle", "square"]
+	var labels := { "circle": "水", "triangle": "火", "square": "土" }
+	var accent_cols := {
+		"circle":   Color(0.3, 0.7, 1.0),
+		"triangle": Color(1.0, 0.35, 0.35),
+		"square":   Color(0.85, 0.6, 0.2),
+	}
+	var card_w := 160.0
+	var gap    := 16.0
+	var total  := card_w * 3.0 + gap * 2.0
+	var start_x := (W - total) * 0.5
+
+	for ci in range(attrs.size()):
+		var attr := attrs[ci]
+		var accent: Color = accent_cols[attr]
+		var cx := start_x + ci * (card_w + gap)
+		var cy := H * 0.30
+
+		var card := Button.new()
+		card.size = Vector2(card_w, 180)
+		card.position = Vector2(cx, cy)
+		card.text = ""
+		if jp_font:
+			card.add_theme_font_override("font", jp_font)
+		card.add_theme_font_size_override("font_size", 14)
+
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.05, 0.05, 0.11, 0.9)
+		sb.set_corner_radius_all(12)
+		sb.set_border_width_all(2)
+		sb.border_color = accent
+		sb.shadow_color = Color(accent.r, accent.g, accent.b, 0.45)
+		sb.shadow_size = 10
+		card.add_theme_stylebox_override("normal", sb)
+		var sb_hover := sb.duplicate() as StyleBoxFlat
+		sb_hover.bg_color = Color(0.1, 0.1, 0.18, 0.95)
+		card.add_theme_stylebox_override("hover", sb_hover)
+		card.add_theme_stylebox_override("pressed", sb_hover)
+		card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		layer.add_child(card)
+
+		var icon := Polygon2D.new()
+		icon.polygon = _make_shape_polygon(attr, 22.0)
+		icon.color = accent
+		icon.position = Vector2(cx + card_w * 0.5, cy + 50)
+		layer.add_child(icon)
+
+		var head := _make_label(labels[attr] as String, 20, Vector2(cx + 10, cy + 100))
+		head.custom_minimum_size = Vector2(card_w - 20, 30)
+		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		head.add_theme_color_override("font_color", accent)
+		layer.add_child(head)
+
+		card.pressed.connect(func():
+			layer.queue_free()
+			_start_countdown(attr)
+		)
+
+# 選択→カウントダウン→描画、の間に挟む「3・2・1」（2秒）
+func _start_countdown(attr: String) -> void:
+	game_state = "countdown"
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+
+	var lbl := _make_label("3", 80, Vector2(W * 0.5 - 30, H * 0.4))
+	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.6))
+	layer.add_child(lbl)
+
+	var texts := ["3", "2", "1"]
+	var tw := lbl.create_tween()
+	for t in texts:
+		tw.tween_callback(func(): lbl.text = t)
+		tw.tween_interval(2.0 / 3.0)
+	tw.tween_callback(func():
+		layer.queue_free()
+		_start_drawing(attr)
+	)
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1179,7 +1338,7 @@ func _start_drawing(suggested_shape: String) -> void:
 	game_state = "drawing"
 	draw_shape = suggested_shape
 	draw_sigil_id = GameData.get_equipped_sigil(suggested_shape)
-	draw_timer = DRAW_DURATION
+	draw_timer = DRAW_DURATION + draw_time_bonus
 	coating_count = 0
 	coating_power = 0
 	trace_pts.clear()
@@ -1200,12 +1359,16 @@ func _refresh_draw_guide() -> void:
 	var cx := W * 0.5
 	var cy := H * 0.5
 	var sigil_data := _Sigils.get_data(draw_sigil_id)
-	var pattern: Dictionary = sigil_data.get("guide_pattern", {"outer": draw_shape, "inner": ""})
+	var contour_defs: Array = sigil_data.get("contours", [{"shape": draw_shape, "radius_ratio": 1.0, "weight": 1.0}])
 	var guide_scale: float = sigil_data.get("guide_scale", 1.0)
 	current_guide_r = DRAW_GUIDE_R * guide_scale
 
-	sample_contours = _Shapes.make_sample_contours(pattern, cx, cy, current_guide_r)
-	var contours := _Shapes.make_guide_contours(pattern, cx, cy, current_guide_r)
+	contour_weights.clear()
+	for c in contour_defs:
+		contour_weights.append((c as Dictionary).get("weight", 1.0) as float)
+
+	sample_contours = _Shapes.make_sample_contours(contour_defs, cx, cy, current_guide_r)
+	var contours := _Shapes.make_guide_contours(contour_defs, cx, cy, current_guide_r)
 
 	guide_line.clear_points()
 	guide_glow.clear_points()
@@ -1247,15 +1410,9 @@ func _apply_guide_intensity() -> void:
 		guide_glow_inner.default_color = guide_glow.default_color
 		guide_glow_inner.width = guide_glow.width
 
-# 輪郭ごとの判定半径（外形/内側それぞれのサイズに比例）。内側の小さい輪郭は自動的に判定も厳しくなる
-func _brush_radius_for(contour_r: float) -> float:
-	return contour_r * BRUSH_RATIO * brush_ratio_mult
-
-func _current_brush_radii() -> Array[float]:
-	var radii: Array[float] = [_brush_radius_for(current_guide_r)]
-	if sample_contours.size() > 1:
-		radii.append(_brush_radius_for(current_guide_r * 0.42))
-	return radii
+# ブラシの判定半径。紋章サイズ（tier・輪郭）に関わらず絶対px固定（2026-07-27）
+func _brush_radius() -> float:
+	return DRAW_BRUSH_R * brush_ratio_mult
 
 func _update_drawing(delta: float) -> void:
 	draw_timer -= delta
@@ -1381,7 +1538,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 	var data: Dictionary = SHAPE_DATA[shape]
 	var hp_base: int = data["hp_base"] as int
 	var hp: int      = hp_base + power
-	var kb_r: float  = data["kb_r"] as float
+	var dmg_reduction: float = data["dmg_reduction"] as float
 	var col := _ally_color(shape, power)
 	var sz  := _ally_size(power)
 	var node: Node2D
@@ -1405,7 +1562,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 	allies.append({
 		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
-		"kb_resist": kb_r
+		"dmg_reduction": dmg_reduction, "tier": SHAPE_TO_TIER.get(shape, 1)
 	})
 	if allies.size() == 3:
 		_show_hint("merge", "出撃前に装備した紋章で強さが決まる！", Vector2(W * 0.5 - 110, H * 0.20))
@@ -1571,24 +1728,25 @@ func _evaluate_lap() -> void:
 	trace_line.modulate = Color.WHITE
 	cov_lbl.text = "0%"
 
+	var lap_gain: Dictionary = _Sigils.get_data(draw_sigil_id).get("lap_gain", {"perfect": 35, "great": 20, "good": 10})
 	var gain := 0
 	var label := ""
 	var col := Color.WHITE
 	var grade := ""
 	if cov >= 0.90:
-		gain = 35; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"
+		gain = lap_gain["perfect"] as int; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"
 	elif cov >= 0.75:
-		gain = 20; label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great"
+		gain = lap_gain["great"] as int;   label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great"
 	elif cov >= 0.70:
-		gain = 10; label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good"
+		gain = lap_gain["good"] as int;    label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good"
 	else:
-		label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
+		gain = MISS_GAIN; label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
 
 	var pitch := 1.0 + minf(0.5, float(coating_count) * 0.08)
 	Sfx.play_lap(grade, pitch)
-	if gain > 0:
+	coating_power += gain
+	if grade != "miss":
 		coating_count += 1
-		coating_power += gain
 		coating_lbl.text = "×%d" % coating_count
 		_apply_guide_intensity()
 		_spawn_lap_pulse(col)
@@ -1731,8 +1889,9 @@ func _update_ui() -> void:
 	hp_lbl.text   = "HP: %d" % player_hp
 	time_lbl.text = "%.0fs" % elapsed_time
 	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
-	frag_lbl.text = "欠片: %d/%d" % [fragment_count, FRAGMENT_THRESHOLD]
+	frag_lbl.text = "欠片: %d/%d" % [fragment_count, fragment_threshold]
 	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(PLAYER_HP_MAX), 0.0, 1.0)
+	frag_bar_fill.size.x = hp_bar_w * clampf(float(fragment_count) / float(fragment_threshold), 0.0, 1.0)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ユーティリティ
@@ -1751,7 +1910,7 @@ func _add_to_trace(pos: Vector2) -> void:
 				trace_pts.append(prev.lerp(pos, float(i) / float(n)))
 	trace_pts.append(pos)
 
-func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2], brush_r: float = DRAW_BRUSH_R) -> float:
+func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2], brush_r: float) -> float:
 	if s_pts.is_empty() or t_pts.is_empty(): return 0.0
 	var covered := 0
 	for sp in s_pts:
@@ -1761,16 +1920,17 @@ func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2], brush_r: float
 				break
 	return float(covered) / float(s_pts.size())
 
-# 入れ子紋章（外形+内側）用：輪郭ごとに個別採点し、最小値を取る。
-# 単純結合だと内側の小さい輪郭が「外形をなぞっただけ」で不当にカバー率を稼いでしまうため
+# 輪郭ごとに個別採点し、重み付き平均を取る（2026-07-27：最小値方式から変更）。
+# 片方の輪郭だけ失敗しても即座に総合スコアが崩れないようにしつつ、内側を無視して
+# 外形だけで稼ぐこともできないよう、輪郭ごとの重み（Sigils.gdのcontours定義）で調整する
 func _calc_coverage_contours(t_pts: Array[Vector2], contours: Array) -> float:
 	if contours.is_empty(): return 0.0
-	var radii := _current_brush_radii()
-	var worst := 1.0
+	var brush_r := _brush_radius()
+	var total := 0.0
 	for i in contours.size():
-		var r: float = radii[i] if i < radii.size() else radii[0]
-		worst = minf(worst, _calc_coverage(t_pts, contours[i], r))
-	return worst
+		var w: float = contour_weights[i] if i < contour_weights.size() else 1.0
+		total += _calc_coverage(t_pts, contours[i], brush_r) * w
+	return total
 
 func _nearest_enemy(from: Vector2) -> Dictionary:
 	var best : Dictionary = {}
