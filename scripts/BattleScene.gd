@@ -714,6 +714,9 @@ func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: i
 			if world_pos.distance_to(e["pos"] as Vector2) < (e["radius"] as float) + 10.0:
 				e["hp"] = (e["hp"] as int) - dmg
 				e["flash"] = 0.12
+				# 2026-07-28：土は遠距離弾を持たないため、盾が弾かないと密着ダメージを避けられない指摘を受けて追加
+				var kb_dir: Vector2 = ((e["pos"] as Vector2) - world_pos).normalized()
+				e["kb"] = (e["kb"] as Vector2) + kb_dir * 180.0
 				orb["hit_cd"] = 0.35
 				break
 
@@ -761,6 +764,9 @@ func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color) -> void:
 		if pos.distance_to(e["pos"] as Vector2) < radius:
 			e["hp"] = (e["hp"] as int) - dmg
 			e["flash"] = 0.12
+			# 2026-07-28：衝撃波の名前通り、当てた敵を外側へ弾き飛ばす（土の武器は近接のみで弾かないと密着され続けるため）
+			var kb_dir: Vector2 = ((e["pos"] as Vector2) - pos).normalized()
+			e["kb"] = (e["kb"] as Vector2) + kb_dir * 220.0
 	var ring := Line2D.new()
 	ring.width = 3.0
 	ring.default_color = col
