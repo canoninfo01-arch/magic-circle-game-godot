@@ -36,12 +36,12 @@ static func make_guide_pts(shape: String, cx: float, cy: float, r: float) -> Pac
 				var a := float(i) / 60.0 * TAU
 				pts.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
 		"eye":
-			# 紡錘形（目玉状）。左右に尖った先端、上下に膨らむ一筆書きの輪郭
+			# 紡錘形（目玉状）。上下に尖った先端、左右に膨らむ一筆書きの輪郭
 			for i in range(121):
 				var t := float(i) / 120.0 * TAU
 				var s := sin(t)
-				var x := r * cos(t)
-				var y := r * 0.35 * s * s * s
+				var x := r * 0.35 * s * s * s
+				var y := r * cos(t)
 				pts.append(Vector2(cx + x, cy + y))
 	return pts
 

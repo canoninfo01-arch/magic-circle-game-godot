@@ -17,9 +17,10 @@ const SIGIL_DATA := {
 	},
 	"circle_2": {
 		"attribute": "circle", "tier": 2, "guide_scale": 1.15,
+		# 2026-07-29：目玉は小さい内接図形ではなく、外周の丸とほぼ同径（先端が外周に接するくらい大きい）
 		"contours": [
-			{"shape": "circle", "radius_ratio": 1.0, "weight": 0.6},
-			{"shape": "eye", "radius_ratio": 0.42, "weight": 0.4},
+			{"shape": "circle", "radius_ratio": 1.0, "weight": 0.5},
+			{"shape": "eye", "radius_ratio": 1.0, "weight": 0.5},
 		],
 		"spawn_shape": "circle_mid",
 		"lap_gain": {"perfect": 50, "great": 30, "good": 15},
