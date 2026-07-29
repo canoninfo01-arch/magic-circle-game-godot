@@ -622,16 +622,18 @@ func _update_enemies(delta: float) -> void:
 # 仲間
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _update_allies(delta: float) -> void:
-	var circles : Array[Dictionary] = []
-	var mids    : Array[Dictionary] = []
+	# 2026-07-29：外周/中間の担当を属性の役割（土=盾）に合わせて入れ替え。
+	# 旧仕様（丸=盾だった頃）の名残で丸が外周のままになっていたのを修正
+	var outer : Array[Dictionary] = []
+	var mid   : Array[Dictionary] = []
 
 	for a in allies:
 		match a["shape"]:
-			"circle", "circle_mid", "double_circle":                          circles.append(a)
-			"triangle", "triangle_mid", "square", "square_mid", "hexagram", "octagram": mids.append(a)
+			"square", "square_mid", "octagram":                            outer.append(a)
+			"circle", "circle_mid", "double_circle", "triangle", "triangle_mid", "hexagram": mid.append(a)
 
-	_position_ring(circles, ALLY_OUTER_R, delta, 0.0)
-	_position_ring(mids,    ALLY_MID_R,   delta, PI / 3.0)
+	_position_ring(outer, ALLY_OUTER_R, delta, 0.0)
+	_position_ring(mid,   ALLY_MID_R,   delta, PI / 3.0)
 
 	for a in allies:
 		a["attack_timer"] = (a["attack_timer"] as float) - delta
