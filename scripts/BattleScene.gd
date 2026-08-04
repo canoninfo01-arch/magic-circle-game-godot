@@ -44,9 +44,11 @@ const ENEMY_DAMAGE:     int   = 1
 
 const ENEMY_TYPES := {
 	# 2026-07-27：属性相性をはっきりさせるため、シャード（速い・脆い）とヴォイドマーク（遅い・硬い）を尖らせた
-	"shard":      { "sides": 3, "radius": 12.0, "color": Color(1.0, 0.2,  0.35), "hp_m": 0.5,  "spd_m": 1.6  },
-	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(1.0, 0.5,  0.1),  "hp_m": 2.0,  "spd_m": 0.85 },
-	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
+	# 2026-08-04：colorを白銀ベースに変更（彩度は天敵ウォード専用に空けるため）。本体スプライトはENEMY_DESATURATE_SHADERで
+	# 彩度を落としており、この色は死亡パーティクル（_spawn_death_particles）にのみ使われる
+	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.5,  "spd_m": 1.6  },
+	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 2.0,  "spd_m": 0.85 },
+	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
 }
 
 # 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
@@ -83,6 +85,9 @@ const ENEMY_SPRITE_CONTENT_RATIO := {
 	"fracture":  0.80,
 	"void_mark": 0.83,
 }
+# 2026-08-04：敵の彩度を落として白銀寄りにするシェーダー。全敵スプライトで共有する1つのマテリアルを使い回す
+const ENEMY_DESATURATE_SHADER := preload("res://shaders/enemy_desaturate.gdshader")
+var _enemy_shader_mat: ShaderMaterial
 
 const FRAGMENT_THRESHOLD_BASE := 5
 const CHAR_ITEM_CHANCE  := 0.05  # 2026-07-27：0.08→0.05にさらに減速（10体到達を遅くする狙い）
@@ -277,6 +282,9 @@ func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
 	_load_save()
+
+	_enemy_shader_mat = ShaderMaterial.new()
+	_enemy_shader_mat.shader = ENEMY_DESATURATE_SHADER
 
 	# カメラ（プレイヤー追従・無限フィールド）
 	camera = Camera2D.new()
@@ -575,6 +583,7 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	var content_px: float = max(tex_size.x, tex_size.y) * content_ratio
 	node.scale = Vector2.ONE * ((r * 2.2) / content_px)
 	node.position = pos
+	node.material = _enemy_shader_mat
 	add_child(node)
 
 	var ward := ""
