@@ -49,6 +49,19 @@ const ENEMY_TYPES := {
 	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.75, 0.2, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
 }
 
+# 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
+# 「見た目だけで効かなそう」を表現する（味方の_attach_sigil_ringと同じ発想）。弱点属性からのダメージのみ軽減する。
+# PREDATOR_START_TIMEは将来⑧のステージ2実装時に「ステージ2開始」へ差し替え予定の暫定値（今は経過時間で代用）
+const PREDATOR_ATTRS := ["circle", "triangle", "square"]
+const PREDATOR_WARD_COLOR := {
+	"circle":   Color(0.3,  0.7,  1.0),
+	"triangle": Color(1.0,  0.45, 0.2),
+	"square":   Color(0.85, 0.65, 0.25),
+}
+const PREDATOR_DMG_CUT   := 0.6
+const PREDATOR_CHANCE    := 0.18
+const PREDATOR_START_TIME := 120.0
+
 # 特定ウェーブ番号は単一タイプ強制（2026-07-27追加）。「このウェーブは火が輝く」等の山場を作る狙い。
 # countは通常式（6+wave_count*2）を使わず個別指定（void_markは1体が重いので少数精鋭にする）
 const WAVE_FORCED_TYPE := {
@@ -564,7 +577,33 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	node.position = pos
 	add_child(node)
 
-	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0 })
+	var ward := ""
+	if elapsed_time >= PREDATOR_START_TIME and randf() < PREDATOR_CHANCE:
+		ward = PREDATOR_ATTRS[randi() % PREDATOR_ATTRS.size()]
+		_attach_predator_ring(node, r, ward)
+
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward })
+
+# 天敵ウォードのリング表示（味方の_attach_sigil_ringと同じ発想。本体色は変えない）
+func _attach_predator_ring(parent: Node2D, r: float, ward: String) -> void:
+	var col: Color = PREDATOR_WARD_COLOR.get(ward, Color.WHITE)
+	var ring := Line2D.new()
+	ring.width = 2.2
+	ring.default_color = col
+	for p in _make_ring_points(r * 1.5, 1.0):
+		ring.add_point(p)
+	parent.add_child(ring)
+	var tw := ring.create_tween()
+	tw.set_loops()
+	tw.tween_property(ring, "rotation", TAU, 4.0).from(0.0)
+
+# 敵への全ダメージ経路が通る共通関数（2026-08-04追加）。attrを渡すと天敵ウォード判定を行う。
+# attrが空文字（プレイヤー自身の弾など属性を持たない攻撃）の場合はウォードを無視する。
+func _damage_enemy(e: Dictionary, dmg: int, attr: String = "") -> void:
+	var final_dmg := dmg
+	if attr != "" and (e.get("ward", "") as String) == attr:
+		final_dmg = maxi(1, int(ceil(float(dmg) * (1.0 - PREDATOR_DMG_CUT))))
+	e["hp"] = (e["hp"] as int) - final_dmg
 
 func _update_enemies(delta: float) -> void:
 	var to_remove : Array[int] = []
@@ -681,15 +720,16 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 	if nearest.is_empty(): return
 	var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float) * _ally_weapon_tier_mult(a))
 	var col: Color = wdata["col"]
+	var attr: String = wdata["attr"] as String
 	match wdata["pattern"] as String:
 		"projectile":
 			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
-			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float)
+			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float, attr)
 			Sfx.play_shoot()
 		"chain":
-			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col)
+			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr)
 		"pulse":
-			_fire_pulse(ally_pos, dmg, wdata["radius"] as float, col)
+			_fire_pulse(ally_pos, dmg, wdata["radius"] as float, col, attr)
 
 func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: int, delta: float) -> void:
 	if not a.has("orbiters"):
@@ -714,7 +754,7 @@ func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: i
 		var dmg := int(float(wdata["dmg"] as int) * (1.0 + float(level - 1) * 0.25) * (weapon_stats["damage"] as float) * _ally_weapon_tier_mult(a))
 		for e in enemies:
 			if world_pos.distance_to(e["pos"] as Vector2) < (e["radius"] as float) + 10.0:
-				e["hp"] = (e["hp"] as int) - dmg
+				_damage_enemy(e, dmg, wdata["attr"] as String)
 				e["flash"] = 0.12
 				# 2026-07-28：土は遠距離弾を持たないため、盾が弾かないと密着ダメージを避けられない指摘を受けて追加
 				# 2026-07-29：さらに強めてほしいとの要望で180→300に増加
@@ -723,7 +763,7 @@ func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: i
 				orb["hit_cd"] = 0.35
 				break
 
-func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: float, col: Color) -> void:
+func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: float, col: Color, attr: String = "") -> void:
 	var hit_enemies: Array = []
 	var cur_pos := from
 	var any_hit := false
@@ -737,7 +777,7 @@ func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: flo
 				best_d = d
 				target = e
 		if target.is_empty(): break
-		target["hp"] = (target["hp"] as int) - dmg
+		_damage_enemy(target, dmg, attr)
 		target["flash"] = 0.12
 		_draw_lightning_bolt(cur_pos, target["pos"] as Vector2, col)
 		hit_enemies.append(target)
@@ -761,11 +801,11 @@ func _draw_lightning_bolt(from: Vector2, to: Vector2, col: Color) -> void:
 	tw.tween_property(bolt, "modulate:a", 0.0, 0.2)
 	tw.tween_callback(bolt.queue_free)
 
-func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color) -> void:
+func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color, attr: String = "") -> void:
 	Sfx.play_shoot()
 	for e in enemies:
 		if pos.distance_to(e["pos"] as Vector2) < radius:
-			e["hp"] = (e["hp"] as int) - dmg
+			_damage_enemy(e, dmg, attr)
 			e["flash"] = 0.12
 			# 2026-07-28：衝撃波の名前通り、当てた敵を外側へ弾き飛ばす（土の武器は近接のみで弾かないと密着され続けるため）
 			# 2026-07-29：さらに強めてほしいとの要望で220→400に増加
@@ -809,13 +849,14 @@ func _ally_attack(a: Dictionary) -> void:
 	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 	var bullet_col: Color = SHAPE_DATA[shape]["color"]
 
+	var attr: String = SHAPE_TO_ATTR.get(shape, "") as String
 	var spread: float = 0.15 * (bullet_count - 1)
 	for i in range(bullet_count):
 		var offset: float = -spread + spread * 2.0 * float(i) / maxf(1.0, float(bullet_count - 1))
 		var dir: Vector2  = base_dir.rotated(offset)
-		_fire_bullet(ally_pos, dir, dmg, bullet_col)
+		_fire_bullet(ally_pos, dir, dmg, bullet_col, false, false, 0.0, attr)
 
-func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75), pierce: bool = false, homing: bool = false, explode_r: float = 0.0) -> void:
+func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75), pierce: bool = false, homing: bool = false, explode_r: float = 0.0, attr: String = "") -> void:
 	var node := Node2D.new()
 	node.position = from
 
@@ -832,7 +873,7 @@ func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0,
 	add_child(node)
 	bullets.append({
 		"pos": from, "dir": dir, "traveled": 0.0, "dmg": dmg, "node": node, "col": col,
-		"pierce": pierce, "homing": homing, "explode_r": explode_r, "hit_set": []
+		"pierce": pierce, "homing": homing, "explode_r": explode_r, "hit_set": [], "attr": attr
 	})
 
 func _remove_ally(a: Dictionary) -> void:
@@ -873,14 +914,14 @@ func _update_bullets(delta: float) -> void:
 		for e in enemies:
 			if hit_set.has(e): continue
 			if (b["pos"] as Vector2).distance_to(e["pos"] as Vector2) < (e["radius"] as float) + BULLET_R:
-				e["hp"] -= b["dmg"]
+				_damage_enemy(e, b["dmg"] as int, b.get("attr", "") as String)
 				e["flash"] = 0.12
 				hit = true
 				if pierce:
 					hit_set.append(e)
 				var explode_r: float = b.get("explode_r", 0.0)
 				if explode_r > 0.0:
-					_explode_at(b["pos"] as Vector2, b["dmg"] as int, explode_r, b["col"] as Color, e)
+					_explode_at(b["pos"] as Vector2, b["dmg"] as int, explode_r, b["col"] as Color, e, b.get("attr", "") as String)
 				break
 
 		if (hit and not pierce) or (b["traveled"] as float) >= BULLET_RANGE:
@@ -898,11 +939,11 @@ func _update_bullets(delta: float) -> void:
 	for e in dead:
 		_on_enemy_death(e)
 
-func _explode_at(pos: Vector2, dmg: int, radius: float, col: Color, exclude: Dictionary) -> void:
+func _explode_at(pos: Vector2, dmg: int, radius: float, col: Color, exclude: Dictionary, attr: String = "") -> void:
 	for e in enemies:
 		if e == exclude: continue
 		if pos.distance_to(e["pos"] as Vector2) < radius:
-			e["hp"] -= dmg
+			_damage_enemy(e, dmg, attr)
 			e["flash"] = 0.12
 	_spawn_death_particles(pos, col, radius * 0.35)
 	var ring := Line2D.new()
@@ -1577,9 +1618,9 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 	if allies.size() == 3:
 		_show_hint("merge", "出撃前に装備した紋章で強さが決まる！", Vector2(W * 0.5 - 110, H * 0.20))
 	if burst:
-		_summon_burst(pos, col, power)
+		_summon_burst(pos, col, power, SHAPE_TO_ATTR.get(shape, "") as String)
 
-func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
+func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
 	# 2026-07-16：ノックバックの強さも召喚パワーに応じて増すよう変更（強い召喚ほど吹き飛ばしも大きく）
 	# 2026-07-18：見た目（リングの広がり・パーティクル数・電撃）もパワーに連動させ、強い召喚ほど派手になるように拡張
@@ -1592,7 +1633,7 @@ func _summon_burst(pos: Vector2, col: Color, power: int) -> void:
 		var diff: Vector2 = (e["pos"] as Vector2) - pos
 		var dist := diff.length()
 		if dist < SUMMON_BURST_R:
-			e["hp"] = (e["hp"] as int) - dmg
+			_damage_enemy(e, dmg, attr)
 			e["flash"] = 0.12
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
