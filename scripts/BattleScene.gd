@@ -24,16 +24,27 @@ const ALLY_BASE_SIZE   := 14.0
 const ALLY_TEX_WATER := preload("res://assets/sprites/ally_water.png")
 const ALLY_TEX_FIRE  := preload("res://assets/sprites/ally_fire.png")
 const ALLY_TEX_EARTH := preload("res://assets/sprites/ally_earth.png")
+# 2026-08-04：tier構成の組み替えに伴い、旧来のally_*.pngはtier2として扱う。
+# tier1（弱化版・仮）を新規追加。tier3（強化版）の絵はまだ差し替えていない（生成済みだが未組込）
+const ALLY_TEX_WATER_1 := preload("res://assets/sprites/ally_water_1.png")
+const ALLY_TEX_FIRE_1  := preload("res://assets/sprites/ally_fire_1.png")
+const ALLY_TEX_EARTH_1 := preload("res://assets/sprites/ally_earth_1.png")
 const ALLY_SPRITE_TEXTURES := {
-	"circle":   ALLY_TEX_WATER,
-	"triangle": ALLY_TEX_FIRE,
-	"square":   ALLY_TEX_EARTH,
+	"circle":       ALLY_TEX_WATER_1,
+	"triangle":     ALLY_TEX_FIRE_1,
+	"square":       ALLY_TEX_EARTH_1,
+	"circle_mid":   ALLY_TEX_WATER,
+	"triangle_mid": ALLY_TEX_FIRE,
+	"square_mid":   ALLY_TEX_EARTH,
 }
 # 各画像の余白を除いた実キャラ部分のキャンバス比率（スケール計算用）
 const ALLY_SPRITE_CONTENT_RATIO := {
-	"circle":   0.90,
-	"triangle": 0.92,
-	"square":   0.94,
+	"circle":       0.82,
+	"triangle":     0.6,
+	"square":       0.62,
+	"circle_mid":   0.90,
+	"triangle_mid": 0.92,
+	"square_mid":   0.94,
 }
 
 const ENEMY_SPAWN_BASE: float = 2.5
