@@ -276,6 +276,9 @@ var guide_glow      : Line2D      = null
 var guide_line_inner: Line2D      = null  # tier2/3の内側輪郭（点/星）用。tier1では非表示
 var guide_glow_inner: Line2D      = null
 var guide_base_color := Color.WHITE
+var guide_rune_root : Node2D = null  # 「これは紋章だ」感を出すための、円周上を回るルーン飾り
+var guide_rune_marks: Array[Polygon2D] = []
+const GUIDE_RUNE_COUNT := 8
 var coating_lbl   : Label       = null
 var draw_timer_lbl: Label       = null
 var cov_lbl       : Label       = null
@@ -475,6 +478,22 @@ func _build_draw_layer() -> void:
 	trace_line.width = 5.0
 	trace_line.default_color = Color.WHITE  # modulate で色を制御するので白ベース
 	draw_layer.add_child(trace_line)
+
+	# 円周上に並ぶ小さなルーン飾り（2026-08-04追加）：なぞる図形が「召喚の紋章」であることを
+	# 単純な輪郭線だけより伝えるため、時計の目盛りのようにマークを配置しゆっくり回転させる
+	guide_rune_root = Node2D.new()
+	guide_rune_root.position = Vector2(W * 0.5, H * 0.5)
+	draw_layer.add_child(guide_rune_root)
+	var rune_tw := guide_rune_root.create_tween()
+	rune_tw.set_loops()
+	rune_tw.tween_property(guide_rune_root, "rotation", TAU, 30.0).from(0.0)
+	for i in range(GUIDE_RUNE_COUNT):
+		var mark := Polygon2D.new()
+		mark.polygon = _make_star_pts(4, 7.0, 0.4)
+		var ang := float(i) / float(GUIDE_RUNE_COUNT) * TAU
+		mark.position = Vector2(cos(ang), sin(ang)) * current_guide_r
+		guide_rune_root.add_child(mark)
+		guide_rune_marks.append(mark)
 
 	draw_timer_lbl = _make_label("8.0", 36, Vector2(W * 0.5 - 28, H * 0.08))
 	draw_timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
@@ -765,7 +784,7 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 	match wdata["pattern"] as String:
 		"projectile":
 			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
-			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float, attr)
+			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float, attr, true)
 			Sfx.play_shoot()
 		"chain":
 			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr)
@@ -897,19 +916,33 @@ func _ally_attack(a: Dictionary) -> void:
 		var dir: Vector2  = base_dir.rotated(offset)
 		_fire_bullet(ally_pos, dir, dmg, bullet_col, false, false, 0.0, attr)
 
-func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75), pierce: bool = false, homing: bool = false, explode_r: float = 0.0, attr: String = "") -> void:
+func _fire_bullet(from: Vector2, dir: Vector2, dmg: int, col: Color = Color(1.0, 1.0, 0.75), pierce: bool = false, homing: bool = false, explode_r: float = 0.0, attr: String = "", special: bool = false) -> void:
 	var node := Node2D.new()
 	node.position = from
 
+	# 属性武器の弾（special）は基本弾より一回り大きく・明るく・芒星の角も多くして見分けをつける
+	var glow_r    := BULLET_R * (3.4 if special else 2.6)
+	var glow_a    := 0.5 if special else 0.3
+	var rune_pts  := 6 if special else 4
+	var rune_r    := BULLET_R * (2.3 if special else 1.9)
+	var core_boost := 1.4 if special else 1.0
+
 	var glow := Polygon2D.new()
-	glow.polygon = _make_ngon(10, BULLET_R * 2.6)
-	glow.color = Color(col.r, col.g, col.b, 0.3)
+	glow.polygon = _make_ngon(10, glow_r)
+	glow.color = Color(col.r, col.g, col.b, glow_a)
 	node.add_child(glow)
 
 	var rune := Polygon2D.new()
-	rune.polygon = _make_star_pts(4, BULLET_R * 1.9, 0.35)
-	rune.color = col
+	rune.polygon = _make_star_pts(rune_pts, rune_r, 0.35)
+	rune.color = Color(col.r * core_boost, col.g * core_boost, col.b * core_boost, 1.0)
 	node.add_child(rune)
+
+	if special:
+		var outline := Polygon2D.new()
+		outline.polygon = _make_star_pts(rune_pts, rune_r * 1.35, 0.6)
+		outline.color = Color(col.r, col.g, col.b, 0.4)
+		node.add_child(outline)
+		node.move_child(outline, 1)
 
 	add_child(node)
 	bullets.append({
@@ -1063,19 +1096,22 @@ func _spawn_char_item(pos: Vector2) -> void:
 	_show_hint("char_item", "属性を選んで仲間を召喚！", Vector2(W * 0.5 - 100, H * 0.25))
 
 func _spawn_heal_item(pos: Vector2) -> void:
-	var node := _make_rune_pickup(Color(0.4, 1.0, 0.55), FRAGMENT_R * 1.2, 4, 0.4, 4.0)
+	# 2026-08-04：欠片と同じ「星ルーン」だと見分けづらいとの指摘を受け、回復だけ十字（プラス）シルエットに変更
+	var node := _make_rune_pickup(Color(0.4, 1.0, 0.55), FRAGMENT_R * 1.2, 4, 0.4, 4.0, "cross")
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "heal", "subtype": "", "pos": pos, "node": node })
 
 func _spawn_weapon_item(pos: Vector2) -> void:
-	var node := _make_rune_pickup(Color(1.0, 0.85, 0.4), ITEM_R * 1.1, 8, 0.4, 3.5)
+	# 2026-08-04：欠片と同じ「星ルーン」だと見分けづらいとの指摘を受け、武器だけ鋭い4方向の刃型シルエットに変更
+	var node := _make_rune_pickup(Color(1.0, 0.85, 0.4), ITEM_R * 1.15, 4, 0.12, 3.5, "blade")
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "weapon", "subtype": "", "pos": pos, "node": node })
 
 # 弾と共通の「ルーン＋グロー」言語でアイテムを表現（欠片=控えめ・キャラアイテム=豪華に）
-func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: float, spin_speed: float) -> Node2D:
+# shape_kind："star"（既定）/"cross"（回復）/"blade"（武器、鋭い刃型の輪郭を追加）
+func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: float, spin_speed: float, shape_kind: String = "star") -> Node2D:
 	var node := Node2D.new()
 
 	var glow := Polygon2D.new()
@@ -1084,15 +1120,37 @@ func _make_rune_pickup(col: Color, r: float, star_points: int, inner_ratio: floa
 	node.add_child(glow)
 
 	var rune := Polygon2D.new()
-	rune.polygon = _make_star_pts(star_points, r, inner_ratio)
+	if shape_kind == "cross":
+		rune.polygon = _make_cross_pts(r, 0.38)
+	else:
+		rune.polygon = _make_star_pts(star_points, r, inner_ratio)
 	rune.color = col
 	node.add_child(rune)
+
+	if shape_kind == "blade":
+		# 刃の輪郭を強調する菱形の縁取り（星ルーンだけの他アイテムと明確に見分けがつくように）
+		var frame := Polygon2D.new()
+		frame.polygon = _make_ngon(4, r * 0.75)
+		frame.color = Color(col.r, col.g, col.b, 0.5)
+		node.add_child(frame)
+		node.move_child(frame, 1)
 
 	var tw := node.create_tween()
 	tw.set_loops()
 	tw.tween_property(node, "rotation", TAU, spin_speed).from(0.0)
 
 	return node
+
+# 十字（プラス）型ポリゴン。回復アイテムを他のアイテムと明確に見分けるためのシルエット
+func _make_cross_pts(size: float, arm_ratio: float) -> PackedVector2Array:
+	var a := size
+	var b := size * arm_ratio
+	return PackedVector2Array([
+		Vector2(-b, -a), Vector2(b, -a), Vector2(b, -b),
+		Vector2(a, -b), Vector2(a, b), Vector2(b, b),
+		Vector2(b, a), Vector2(-b, a), Vector2(-b, b),
+		Vector2(-a, b), Vector2(-a, -b), Vector2(-b, -b),
+	])
 
 func _update_items() -> void:
 	var to_remove : Array[int] = []
@@ -1166,8 +1224,8 @@ func _start_upgrade_select() -> void:
 		"move_speed": Color(0.5, 1.0, 0.6),
 		"draw_time":  Color(0.85, 0.6, 1.0),
 	}
-	var card_w := 160.0
-	var gap    := 16.0
+	var card_w := 108.0
+	var gap    := 12.0
 	var total  := card_w * 3.0 + gap * 2.0
 	var start_x := (W - total) * 0.5
 
@@ -1262,8 +1320,8 @@ func _start_weapon_select() -> void:
 	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 	layer.add_child(title)
 
-	var card_w := 160.0
-	var gap    := 16.0
+	var card_w := 108.0
+	var gap    := 12.0
 	var total  := card_w * float(choices.size()) + gap * float(choices.size() - 1)
 	var start_x := (W - total) * 0.5
 
@@ -1351,8 +1409,8 @@ func _start_attr_select() -> void:
 		"triangle": Color(1.0, 0.35, 0.35),
 		"square":   Color(0.85, 0.6, 0.2),
 	}
-	var card_w := 160.0
-	var gap    := 16.0
+	var card_w := 108.0
+	var gap    := 12.0
 	var total  := card_w * 3.0 + gap * 2.0
 	var start_x := (W - total) * 0.5
 
@@ -1439,6 +1497,7 @@ func _start_drawing(suggested_shape: String) -> void:
 	draw_touch_id = -1
 	guide_line.visible = true
 	guide_glow.visible = true
+	guide_rune_root.visible = true
 	trace_line.visible = true
 	draw_timer_lbl.visible = true
 	cov_lbl.visible = true
@@ -1487,6 +1546,11 @@ func _refresh_draw_guide() -> void:
 	}
 	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
 	guide_base_color = sc
+
+	for i in range(guide_rune_marks.size()):
+		var ang := float(i) / float(guide_rune_marks.size()) * TAU
+		guide_rune_marks[i].position = Vector2(cos(ang), sin(ang)) * current_guide_r
+
 	_apply_guide_intensity()
 
 func _apply_guide_intensity() -> void:
@@ -1501,6 +1565,12 @@ func _apply_guide_intensity() -> void:
 		guide_line_inner.width = guide_line.width
 		guide_glow_inner.default_color = guide_glow.default_color
 		guide_glow_inner.width = guide_glow.width
+
+	var rune_col := guide_base_color.lerp(Color.WHITE, boost)
+	var rune_scale := 1.0 + boost * 0.6
+	for mark in guide_rune_marks:
+		mark.color = rune_col
+		mark.scale = Vector2.ONE * rune_scale
 
 # ブラシの判定半径。紋章サイズ（tier・輪郭）に関わらず絶対px固定（2026-07-27）
 func _brush_radius() -> float:
@@ -1531,6 +1601,7 @@ func _show_summon_result() -> void:
 	game_state = "summon_result"
 	guide_line.visible = false
 	guide_glow.visible = false
+	guide_rune_root.visible = false
 	trace_line.visible = false
 	draw_timer_lbl.visible = false
 	cov_lbl.visible = false
@@ -1650,6 +1721,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 		node = poly
 	node.position = pos
 	add_child(node)
+	_attach_ally_idle_motion(node)
 	_attach_sigil_ring(node, sz, power)
 	allies.append({
 		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
@@ -1660,6 +1732,24 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 		_show_hint("merge", "出撃前に装備した紋章で強さが決まる！", Vector2(W * 0.5 - 110, H * 0.20))
 	if burst:
 		_summon_burst(pos, col, power, SHAPE_TO_ATTR.get(shape, "") as String)
+
+# 2026-08-04追加：ドット絵の召喚獣が正面向き固定で静止して見える問題への対処。
+# 絵そのものは変えず、わずかな左右の揺れ＋呼吸のような拡縮ループだけを足して「生きてる」感を出す
+func _attach_ally_idle_motion(node: Node2D) -> void:
+	var base_scale := node.scale
+	var phase := randf() * TAU
+
+	var sway_tw := node.create_tween()
+	sway_tw.set_loops()
+	sway_tw.tween_interval(phase / TAU * 1.3)
+	sway_tw.tween_property(node, "rotation", 0.05, 1.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	sway_tw.tween_property(node, "rotation", -0.05, 1.3).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	var breathe_tw := node.create_tween()
+	breathe_tw.set_loops()
+	breathe_tw.tween_interval(phase / TAU * 1.6)
+	breathe_tw.tween_property(node, "scale", base_scale * 1.05, 1.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	breathe_tw.tween_property(node, "scale", base_scale * 0.95, 1.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
@@ -2082,7 +2172,8 @@ func _most_damaged_ally() -> Dictionary:
 
 func _ally_color(shape: String, coating: int) -> Color:
 	var base: Color       = SHAPE_DATA[shape]["color"]
-	var brightness: float = 0.35 + minf(0.65, float(coating) * 0.18)
+	# 2026-08-04：初期仲間（coating=1で生成）が暗すぎて視認できない問題を受け、最低輝度の底上げ
+	var brightness: float = 0.55 + minf(0.45, float(coating) * 0.11)
 	var col := base * brightness
 	# 最大近くは白く光る（白成分を混ぜる）
 	if coating >= 4:
