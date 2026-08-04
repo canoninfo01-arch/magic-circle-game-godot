@@ -73,16 +73,16 @@ const ENEMY_TYPES := {
 
 # 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
 # 「見た目だけで効かなそう」を表現する（味方の_attach_sigil_ringと同じ発想）。弱点属性からのダメージのみ軽減する。
-# PREDATOR_START_TIMEは将来⑧のステージ2実装時に「ステージ2開始」へ差し替え予定の暫定値（今は経過時間で代用）
+# ⑧のステージ制実装により、出現条件は経過時間ではなくcurrent_stage（ステージ2以降）に差し替え済み
 const PREDATOR_ATTRS := ["circle", "triangle", "square"]
 const PREDATOR_WARD_COLOR := {
 	"circle":   Color(0.3,  0.7,  1.0),
 	"triangle": Color(1.0,  0.45, 0.2),
 	"square":   Color(0.85, 0.65, 0.25),
 }
-const PREDATOR_DMG_CUT   := 0.6
-const PREDATOR_CHANCE    := 0.18
-const PREDATOR_START_TIME := 120.0
+const PREDATOR_DMG_CUT      := 0.6
+const PREDATOR_CHANCE       := 0.18  # ステージ2
+const PREDATOR_CHANCE_STAGE3 := 0.3  # ステージ3・エンドレスは種類・頻度を増やす
 
 # 特定ウェーブ番号は単一タイプ強制（2026-07-27追加）。「このウェーブは火が輝く」等の山場を作る狙い。
 # countは通常式（6+wave_count*2）を使わず個別指定（void_markは1体が重いので少数精鋭にする）
@@ -197,8 +197,11 @@ var jp_font: Font = null
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲーム状態
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var game_state    := "battle"   # "battle" | "drawing" | "upgrade_select" | "game_over"
+var game_state    := "battle"   # "battle" | "drawing" | "upgrade_select" | "game_over" | "stage_clear"
 var elapsed_time  := 0.0
+# 2026-08-04：⑧ステージ制。current_stageはLoadoutSceneで選んだステージ（GameData.selected_stageから取得）
+var current_stage := 1
+const STAGE_TIME_LIMIT := { 1: 300.0, 2: 600.0, 3: 900.0, 4: -1.0 }  # 4=エンドレス（上限なし）
 var best_time     := 0.0
 var hints_shown   := {}         # 表示済みヒントのフラグ
 
@@ -302,6 +305,7 @@ func _ready() -> void:
 	player_pos = Vector2(W * 0.5, H * 0.6)
 	jp_font = load("res://fonts/jp_font.ttf")
 	_load_save()
+	current_stage = GameData.selected_stage
 
 	_enemy_shader_mat = ShaderMaterial.new()
 	_enemy_shader_mat.shader = ENEMY_DESATURATE_SHADER
@@ -501,6 +505,10 @@ func _process(delta: float) -> void:
 	match game_state:
 		"battle":
 			elapsed_time += delta
+			var limit: float = STAGE_TIME_LIMIT.get(current_stage, -1.0) as float
+			if limit > 0.0 and elapsed_time >= limit:
+				_stage_clear()
+				return
 			_update_player(delta)
 			_update_enemies(delta)
 			_update_allies(delta)
@@ -511,7 +519,7 @@ func _process(delta: float) -> void:
 			_update_particles(delta)
 		"drawing":
 			_update_drawing(delta)
-		"game_over":
+		"game_over", "stage_clear":
 			pass
 
 func _update_player(delta: float) -> void:
@@ -570,7 +578,8 @@ func _spawn_enemies(delta: float) -> void:
 	_spawn_one_enemy()
 
 func _trigger_wave() -> void:
-	var forced_data: Dictionary = WAVE_FORCED_TYPE.get(wave_count, {}) as Dictionary
+	# 2026-08-04：単一属性の強制ウェーブは⑧の設計に合わせてステージ3・エンドレス限定にした
+	var forced_data: Dictionary = (WAVE_FORCED_TYPE.get(wave_count, {}) as Dictionary) if current_stage >= 3 else {}
 	var forced: String = forced_data.get("type", "") as String
 	var count: int = forced_data.get("count", 6 + wave_count * 2) as int
 	for _i in range(count):
@@ -579,7 +588,8 @@ func _trigger_wave() -> void:
 
 func _pick_enemy_type() -> String:
 	var r := randf()
-	if elapsed_time >= 120.0:
+	# 2026-08-04：ヴォイドマークはステージ2以降限定（ステージ1は「シャード中心→フラクチャー混入」に留める）
+	if current_stage >= 2 and elapsed_time >= 120.0:
 		if r < 0.25: return "void_mark"
 		if r < 0.60: return "fracture"
 		return "shard"
@@ -607,9 +617,11 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	add_child(node)
 
 	var ward := ""
-	if elapsed_time >= PREDATOR_START_TIME and randf() < PREDATOR_CHANCE:
-		ward = PREDATOR_ATTRS[randi() % PREDATOR_ATTRS.size()]
-		_attach_predator_ring(node, r, ward)
+	if current_stage >= 2:
+		var chance: float = PREDATOR_CHANCE_STAGE3 if current_stage >= 3 else PREDATOR_CHANCE
+		if randf() < chance:
+			ward = PREDATOR_ATTRS[randi() % PREDATOR_ATTRS.size()]
+			_attach_predator_ring(node, r, ward)
 
 	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward })
 
@@ -1961,6 +1973,42 @@ func _game_over() -> void:
 		retry_btn.add_theme_font_override("font", jp_font)
 	retry_btn.add_theme_font_size_override("font_size", 26)
 	ui_layer.add_child(retry_btn)
+
+# 2026-08-04：⑧ステージ制。制限時間に到達したら死亡扱いにせずステージクリアとして終える。
+const STAGE_CLEAR_REWARD_TEXT := {
+	1: "紋章tier2が解放された！",
+	2: "紋章tier3が解放された！",
+	3: "エンドレスモードが解放された！",
+}
+func _stage_clear() -> void:
+	game_state = "stage_clear"
+	Sfx.stop_bgm()
+	GameData.clear_stage(current_stage)
+	_save_best(elapsed_time)
+
+	var clear_lbl := _make_label("STAGE CLEAR!", 46, Vector2(W * 0.5 - 148, H * 0.26))
+	clear_lbl.add_theme_color_override("font_color", Color(0.6, 1.0, 0.7))
+	ui_layer.add_child(clear_lbl)
+
+	var score_lbl := _make_label(_fmt_time(elapsed_time) + " 生存", 26, Vector2(W * 0.5 - 70, H * 0.38))
+	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	ui_layer.add_child(score_lbl)
+
+	var reward_txt: String = STAGE_CLEAR_REWARD_TEXT.get(current_stage, "") as String
+	if reward_txt != "":
+		var reward_lbl := _make_label(reward_txt, 20, Vector2(W * 0.5 - 130, H * 0.46))
+		reward_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		ui_layer.add_child(reward_lbl)
+
+	var next_btn := Button.new()
+	next_btn.text = "次へ"
+	next_btn.size = Vector2(180, 60)
+	next_btn.position = Vector2(W * 0.5 - 90, H * 0.58)
+	next_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn"))
+	if jp_font:
+		next_btn.add_theme_font_override("font", jp_font)
+	next_btn.add_theme_font_size_override("font_size", 24)
+	ui_layer.add_child(next_btn)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UI 更新

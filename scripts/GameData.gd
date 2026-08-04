@@ -7,6 +7,11 @@ var collected_ids : Array[String] = []
 # 属性名 -> 装備中のsigil_id（例: {"circle": "circle_2", "triangle": "triangle_1", "square": "square_1"}）
 var equipped      : Dictionary    = {}
 
+# 2026-08-04：⑧ステージ制。unlocked_stageは到達済みの最高ステージ（1〜3）。
+# 4は「エンドレス解禁」を意味する（ステージ3クリアで4になる）。selected_stageはLoadoutSceneで選んだ、次に遊ぶステージ。
+var unlocked_stage : int = 1
+var selected_stage  : int = 1
+
 func _ready() -> void:
 	_load()
 
@@ -29,13 +34,21 @@ func equip_sigil(attribute: String, sigil_id: String) -> void:
 func get_equipped_sigil(attribute: String) -> String:
 	return equipped.get(attribute, _Sigils.default_sigil_id(attribute))
 
-# TODO(実績本実装): 現在は条件なしで全tierを解放する。
-# 目的は「解放→装備→バトル中の描画/召喚に反映」のパイプライン確認であり、
-# 実際の実績条件はこの関数の中身だけを差し替えれば済むようにしてある。
-func check_placeholder_unlocks() -> void:
-	for attr in _Sigils.ATTR_TIERS:
-		for sigil_id in (_Sigils.ATTR_TIERS[attr] as Array):
-			unlock_sigil(sigil_id as String)
+# ステージクリア時の解放処理（2026-08-04：check_placeholder_unlocksを実条件に差し替え）。
+# ステージ1クリア→3属性のtier2を一括解放／ステージ2クリア→tier3を一括解放／ステージ3クリア→エンドレス解禁。
+# 3属性まとめて解放する方式（守さん確定：属性ごとの個別解放は複雑なだけで不採用）。
+func clear_stage(stage: int) -> void:
+	if stage == 1:
+		for attr in _Sigils.ATTR_TIERS:
+			unlock_sigil((_Sigils.ATTR_TIERS[attr] as Array)[1] as String)  # tier2
+	elif stage == 2:
+		for attr in _Sigils.ATTR_TIERS:
+			unlock_sigil((_Sigils.ATTR_TIERS[attr] as Array)[2] as String)  # tier3
+	unlocked_stage = maxi(unlocked_stage, stage + 1)
+	_save()
+
+func is_stage_unlocked(stage: int) -> bool:
+	return stage <= unlocked_stage
 
 func _load() -> void:
 	var cfg := ConfigFile.new()
@@ -43,10 +56,12 @@ func _load() -> void:
 		var loaded_ids: Array = cfg.get_value("sigils", "unlocked", [])
 		collected_ids.assign(loaded_ids)
 		equipped = cfg.get_value("sigils", "equipped", {})
+		unlocked_stage = cfg.get_value("progress", "unlocked_stage", 1) as int
 
 func _save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load("user://save.cfg")  # 既存の[score]セクションなどを保持したまま追記する
 	cfg.set_value("sigils", "unlocked", collected_ids)
 	cfg.set_value("sigils", "equipped", equipped)
+	cfg.set_value("progress", "unlocked_stage", unlocked_stage)
 	cfg.save("user://save.cfg")

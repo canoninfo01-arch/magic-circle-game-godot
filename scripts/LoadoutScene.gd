@@ -14,12 +14,16 @@ const ATTR_COLORS := {
 }
 const TIER_LABELS := { 1: "基本", 2: "中位", 3: "上位" }
 
+# 2026-08-04：⑧ステージ制。4はエンドレス（ステージ3クリアで解禁）
+const STAGE_LABELS   := { 1: "1", 2: "2", 3: "3", 4: "∞" }
+const STAGE_SUBLABEL := { 1: "5分", 2: "10分", 3: "15分", 4: "エンドレス" }
+
 var jp_font: Font = null
 var chip_buttons: Dictionary = {}  # sigil_id -> Button
+var stage_buttons: Dictionary = {}  # stage(int) -> Button
 
 func _ready() -> void:
 	jp_font = load("res://fonts/jp_font.ttf")
-	GameData.check_placeholder_unlocks()
 
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
@@ -42,10 +46,12 @@ func _build_ui() -> void:
 	sub.add_theme_color_override("font_color", Color(0.62, 0.6, 0.78))
 	layer.add_child(sub)
 
-	var row_h := (H * 0.72) / 3.0
+	_build_stage_row(layer, H * 0.20)
+
+	var row_h := (H * 0.55) / 3.0
 	for ai in range(ATTR_ORDER.size()):
 		var attr: String = ATTR_ORDER[ai]
-		var row_y := H * 0.16 + row_h * ai
+		var row_y := H * 0.30 + row_h * ai
 		_build_attr_row(layer, attr, row_y, row_h)
 
 	var start_btn := Button.new()
@@ -72,6 +78,68 @@ func _build_ui() -> void:
 		get_tree().change_scene_to_file("res://scenes/BattleScene.tscn")
 	)
 	layer.add_child(start_btn)
+
+func _build_stage_row(layer: CanvasLayer, row_y: float) -> void:
+	var label := _make_centered_label("ステージ", 15, row_y, 22)
+	label.add_theme_color_override("font_color", Color(0.75, 0.7, 0.85))
+	layer.add_child(label)
+
+	var stages := [1, 2, 3, 4]
+	var chip_w := 80.0
+	var gap := 10.0
+	var total := chip_w * float(stages.size()) + gap * float(stages.size() - 1)
+	var start_x := (W - total) * 0.5
+	var chip_y := row_y + 26.0
+
+	for si in range(stages.size()):
+		var stage: int = stages[si]
+		var cx := start_x + si * (chip_w + gap)
+
+		var chip := Button.new()
+		chip.size = Vector2(chip_w, 52)
+		chip.position = Vector2(cx, chip_y)
+		chip.text = "%s\n%s" % [STAGE_LABELS[stage], STAGE_SUBLABEL[stage]]
+		if jp_font:
+			chip.add_theme_font_override("font", jp_font)
+		chip.add_theme_font_size_override("font_size", 13)
+		chip.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		chip.pressed.connect(func():
+			GameData.selected_stage = stage
+			_refresh_stage_buttons()
+		)
+		layer.add_child(chip)
+		stage_buttons[stage] = chip
+
+	_refresh_stage_buttons()
+
+func _refresh_stage_buttons() -> void:
+	for stage in stage_buttons:
+		var chip: Button = stage_buttons[stage]
+		var unlocked: bool = GameData.is_stage_unlocked(stage as int)
+		var is_selected: bool = (stage as int) == GameData.selected_stage
+		chip.disabled = not unlocked
+
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(10)
+		sb.set_border_width_all(2)
+		if not unlocked:
+			sb.bg_color = Color(0.06, 0.06, 0.09, 0.85)
+			sb.border_color = Color(0.3, 0.3, 0.34)
+			chip.modulate = Color(0.5, 0.5, 0.5)
+		elif is_selected:
+			sb.bg_color = Color(0.3, 0.22, 0.5, 0.95)
+			sb.border_color = Color(0.75, 0.6, 1.0)
+			sb.shadow_color = Color(0.6, 0.45, 1.0, 0.5)
+			sb.shadow_size = 8
+			chip.modulate = Color(1, 1, 1)
+		else:
+			sb.bg_color = Color(0.08, 0.08, 0.14, 0.9)
+			sb.border_color = Color(0.5, 0.45, 0.65, 0.6)
+			chip.modulate = Color(1, 1, 1)
+		chip.add_theme_stylebox_override("normal", sb)
+		chip.add_theme_stylebox_override("hover", sb)
+		chip.add_theme_stylebox_override("pressed", sb)
+		chip.add_theme_stylebox_override("disabled", sb)
 
 func _build_attr_row(layer: CanvasLayer, attr: String, row_y: float, row_h: float) -> void:
 	var accent: Color = ATTR_COLORS[attr]
