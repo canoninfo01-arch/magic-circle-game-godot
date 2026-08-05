@@ -118,7 +118,7 @@ const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追�
 const WEAPON_ITEM_CHANCE := 0.12  # 2026-07-18：出現率が低すぎるとの指摘で0.06→0.12に増加
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
-const FRAGMENT_R       := 7.0
+const FRAGMENT_R       := 9.5  # 2026-08-04：最頻出アイテムなのに一番小さくて視認しづらいとの指摘で7.0→9.5に拡大
 
 const BULLET_SPEED     := 370.0
 const BULLET_RANGE     := 280.0
@@ -166,8 +166,11 @@ const ATTR_WEAPON_MAX_LEVEL := 3
 
 # pattern: "projectile"（弾。pierce/homing/explode_rはオプション）"chain"（連鎖電撃）
 #          "orbit"（常時回転する近接武器）"pulse"（自分中心の定期衝撃波）
+#          "rain"（敵の密集地点を狙い、予告→着弾までの遅延がある範囲攻撃）
 const ATTR_WEAPON_DATA := {
-	"water_homing": { "attr": "circle",   "name": "追尾の光弾",     "pattern": "projectile", "cooldown": 1.4, "dmg": 6,  "col": Color(0.55, 0.85, 1.0), "homing": true },
+	# 2026-08-05：旧・追尾の光弾は「敵が常にこちらへ直進してくる」設計と役割が被り無意味だったため、
+	# 天から降り注ぐ範囲攻撃「紋章の雨」に置き換えた。密集地点を狙って落ちるので、敵の集まり対策とも噛み合う
+	"water_rain":   { "attr": "circle",   "name": "紋章の雨",       "pattern": "rain",       "cooldown": 2.2, "dmg": 7,  "col": Color(0.55, 0.85, 1.0), "radius": 46.0, "telegraph": 0.5 },
 	"water_pierce": { "attr": "circle",   "name": "貫通の矢",       "pattern": "projectile", "cooldown": 1.0, "dmg": 5,  "col": Color(0.7,  0.95, 1.0), "pierce": true },
 	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 55.0 },
 	"fire_chain":   { "attr": "triangle", "name": "稲妻の鎖",       "pattern": "chain",      "cooldown": 1.8, "dmg": 6,  "col": Color(1.0,  0.9,  0.3),  "jumps": 3, "range": 160.0 },
@@ -227,7 +230,7 @@ var player_attack_timer : float = 0.0
 var allies : Array[Dictionary] = []
 var weapon_stats := { "atk_speed": 1.0, "damage": 1.0, "move_speed": 1.0 }
 var weapon_levels := {
-	"water_homing": 0, "water_pierce": 0,
+	"water_rain": 0, "water_pierce": 0,
 	"fire_explode": 0, "fire_chain": 0,
 	"earth_orbit": 0, "earth_wave": 0,
 }
@@ -676,16 +679,18 @@ func _update_enemies(delta: float) -> void:
 			e["flash"] = maxf(0.0, flash_t - delta)
 			(e["node"] as Node2D).modulate = Color(2.2, 2.2, 2.2) if flash_t > 0.06 else Color.WHITE
 		# 敵同士のセパレーション（群れが重ならないように押し離す）
+		# 2026-08-04：分離が強すぎて敵がプレイヤー周りに均等に薄く広がり、密集が起きない問題を受けて弱めた。
+		# 水の貫通・土の範囲武器（回転盾・衝撃波）は敵が固まってこそ意味を持つため、多少の重なりを許容する
 		var sep := Vector2.ZERO
 		for other in enemies:
 			if other == e: continue
 			var diff: Vector2 = (e["pos"] as Vector2) - (other["pos"] as Vector2)
-			var min_d: float  = (e["radius"] as float) + (other["radius"] as float) + 4.0
+			var min_d: float  = ((e["radius"] as float) + (other["radius"] as float)) * 0.55
 			var d: float      = diff.length()
 			if d < min_d and d > 0.5:
 				sep += diff.normalized() * (min_d - d)
 		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
-		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
+		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 1.1) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
@@ -790,6 +795,10 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr)
 		"pulse":
 			_fire_pulse(ally_pos, dmg, wdata["radius"] as float, col, attr)
+		"rain":
+			var target := _pick_rain_target(wdata["radius"] as float)
+			if not target.is_empty():
+				_start_rain_strike(target["pos"] as Vector2, dmg, wdata["radius"] as float, col, attr, wdata.get("telegraph", 0.5) as float)
 
 func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: int, delta: float) -> void:
 	if not a.has("orbiters"):
@@ -871,6 +880,83 @@ func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color, attr: String
 			# 2026-07-29：さらに強めてほしいとの要望で220→400に増加
 			var kb_dir: Vector2 = ((e["pos"] as Vector2) - pos).normalized()
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * 400.0
+	var ring := Line2D.new()
+	ring.width = 3.0
+	ring.default_color = col
+	for p in _make_ring_points(10.0, 1.0):
+		ring.add_point(p)
+	ring.position = pos
+	add_child(ring)
+	var ring_tw := ring.create_tween()
+	ring_tw.set_parallel(true)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (radius / 10.0), 0.3)
+	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.3)
+	ring_tw.chain().tween_callback(ring.queue_free)
+
+# 2026-08-05：水の「紋章の雨」用。密集地点ほど狙われやすくする（数体をサンプリングし、
+# 周囲に一番仲間内...ではなく敵が多い地点を選ぶ）。密集対策（セパレーション緩和）と噛み合わせる狙い
+func _pick_rain_target(radius: float) -> Dictionary:
+	if enemies.is_empty(): return {}
+	var best: Dictionary = {}
+	var best_count := -1
+	var sample_n := mini(6, enemies.size())
+	var tried_idx: Array[int] = []
+	for _i in range(sample_n * 2):
+		if tried_idx.size() >= sample_n: break
+		var idx := randi() % enemies.size()
+		if tried_idx.has(idx): continue
+		tried_idx.append(idx)
+		var cand: Dictionary = enemies[idx]
+		var cnt := 0
+		for other in enemies:
+			if (cand["pos"] as Vector2).distance_to(other["pos"] as Vector2) <= radius:
+				cnt += 1
+		if cnt > best_count:
+			best_count = cnt
+			best = cand
+	return best
+
+# 天から降り注ぐ範囲攻撃。着弾地点に予告リング＋落下する雨粒を表示してから、少し遅れてダメージを与える
+func _start_rain_strike(pos: Vector2, dmg: int, radius: float, col: Color, attr: String, telegraph: float) -> void:
+	var warn := Line2D.new()
+	warn.width = 2.5
+	warn.default_color = Color(col.r, col.g, col.b, 0.75)
+	for p in _make_ring_points(radius, 1.0):
+		warn.add_point(p)
+	warn.position = pos
+	add_child(warn)
+	var warn_tw := warn.create_tween()
+	warn_tw.tween_property(warn, "scale", Vector2.ONE * 0.75, telegraph).from(Vector2.ONE * 1.3).set_trans(Tween.TRANS_SINE)
+	warn_tw.tween_callback(func():
+		warn.queue_free()
+		_rain_impact(pos, dmg, radius, col, attr)
+	)
+
+	for _i in range(5):
+		var drop := Polygon2D.new()
+		drop.polygon = _make_star_pts(4, 5.0, 0.25)
+		drop.color = Color(col.r, col.g, col.b, 0.85)
+		var off := Vector2(randf_range(-radius * 0.6, radius * 0.6), randf_range(-radius * 0.6, radius * 0.6))
+		var end_pos := pos + off
+		var start_pos := end_pos + Vector2(0, -240.0 - randf() * 80.0)
+		drop.position = start_pos
+		add_child(drop)
+		var dtw := drop.create_tween()
+		dtw.tween_interval(randf() * telegraph * 0.3)
+		dtw.tween_property(drop, "position", end_pos, telegraph * randf_range(0.7, 1.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		dtw.tween_callback(drop.queue_free)
+
+func _rain_impact(pos: Vector2, dmg: int, radius: float, col: Color, attr: String) -> void:
+	Sfx.play_evolve()
+	shake_power = maxf(shake_power, 8.0)
+	for e in enemies:
+		var d := pos.distance_to(e["pos"] as Vector2)
+		if d < radius:
+			_damage_enemy(e, dmg, attr)
+			e["flash"] = 0.12
+			var kb_dir: Vector2 = ((e["pos"] as Vector2) - pos).normalized() if d > 1.0 else Vector2(0.0, -1.0)
+			e["kb"] = (e["kb"] as Vector2) + kb_dir * 160.0
+	_spawn_death_particles(pos, col, radius * 0.35)
 	var ring := Line2D.new()
 	ring.width = 3.0
 	ring.default_color = col
@@ -1082,7 +1168,8 @@ func _update_particles(delta: float) -> void:
 # アイテム
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _spawn_fragment(pos: Vector2) -> void:
-	var node := _make_rune_pickup(Color(0.6, 0.85, 1.0), FRAGMENT_R, 4, 0.4, 3.0)
+	# 2026-08-04：水色だと水属性の仲間/弾と紛らわしく視認性が悪いとの指摘で、属性を持たない中立な銀白に変更
+	var node := _make_rune_pickup(Color(0.88, 0.86, 0.92), FRAGMENT_R, 4, 0.4, 3.0)
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
