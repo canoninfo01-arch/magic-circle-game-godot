@@ -22,6 +22,13 @@ var jp_font: Font = null
 var chip_buttons: Dictionary = {}  # sigil_id -> Button
 var stage_buttons: Dictionary = {}  # stage(int) -> Button
 
+# 2026-08-07：メタ進行「残光」の恒久強化
+const UPGRADE_ORDER  := ["hp", "atk", "spd"]
+const UPGRADE_LABELS := { "hp": "体力強化", "atk": "攻撃強化", "spd": "機動強化" }
+const UPGRADE_DESCS  := { "hp": "最大HP +1/Lv", "atk": "全弾ダメージ +5%/Lv", "spd": "移動速度 +4%/Lv" }
+var zankou_lbl: Label = null
+var upgrade_layer: CanvasLayer = null
+
 func _ready() -> void:
 	jp_font = load("res://fonts/jp_font.ttf")
 
@@ -45,6 +52,21 @@ func _build_ui() -> void:
 	var sub := _make_centered_label("出撃前に、属性ごとの紋章を装備する", 15, H * 0.08 + 46, 26)
 	sub.add_theme_color_override("font_color", Color(0.62, 0.6, 0.78))
 	layer.add_child(sub)
+
+	zankou_lbl = _make_label("残光: %d" % GameData.zankou, 14, Vector2(14, 14))
+	zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
+	layer.add_child(zankou_lbl)
+
+	var upgrade_btn := Button.new()
+	upgrade_btn.text = "強化"
+	upgrade_btn.size = Vector2(70, 34)
+	upgrade_btn.position = Vector2(W - 84, 10)
+	if jp_font:
+		upgrade_btn.add_theme_font_override("font", jp_font)
+	upgrade_btn.add_theme_font_size_override("font_size", 15)
+	upgrade_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	upgrade_btn.pressed.connect(_open_upgrade_panel)
+	layer.add_child(upgrade_btn)
 
 	_build_stage_row(layer, H * 0.20)
 
@@ -207,6 +229,87 @@ func _refresh_attr_chips(attr: String) -> void:
 		chip.add_theme_stylebox_override("hover", sb)
 		chip.add_theme_stylebox_override("pressed", sb)
 		chip.add_theme_stylebox_override("disabled", sb)
+
+func _open_upgrade_panel() -> void:
+	upgrade_layer = CanvasLayer.new()
+	upgrade_layer.layer = 10
+	add_child(upgrade_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.82)
+	dim.size = Vector2(W, H)
+	upgrade_layer.add_child(dim)
+
+	var title := _make_centered_label("恒久強化", 26, H * 0.10, 40)
+	title.add_theme_color_override("font_color", Color(0.85, 0.78, 1.0))
+	upgrade_layer.add_child(title)
+
+	var balance_lbl := _make_centered_label("残光: %d" % GameData.zankou, 18, H * 0.10 + 42, 26)
+	balance_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
+	upgrade_layer.add_child(balance_lbl)
+
+	var row_refreshers: Array[Callable] = []
+	var row_h := 96.0
+	for ui in range(UPGRADE_ORDER.size()):
+		var key: String = UPGRADE_ORDER[ui]
+		var row_y := H * 0.24 + row_h * ui
+		row_refreshers.append(_build_upgrade_row(upgrade_layer, key, row_y, balance_lbl, row_refreshers))
+
+	var close_btn := Button.new()
+	close_btn.text = "閉じる"
+	close_btn.size = Vector2(160, 52)
+	close_btn.position = Vector2(W * 0.5 - 80, H * 0.24 + row_h * UPGRADE_ORDER.size() + 20)
+	if jp_font:
+		close_btn.add_theme_font_override("font", jp_font)
+	close_btn.add_theme_font_size_override("font_size", 20)
+	close_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	close_btn.pressed.connect(func():
+		upgrade_layer.queue_free()
+		upgrade_layer = null
+		zankou_lbl.text = "残光: %d" % GameData.zankou
+	)
+	upgrade_layer.add_child(close_btn)
+
+func _build_upgrade_row(layer: CanvasLayer, key: String, row_y: float, balance_lbl: Label, all_refreshers: Array[Callable]) -> Callable:
+	var name_lbl := _make_label(UPGRADE_LABELS[key] as String, 18, Vector2(24, row_y))
+	name_lbl.add_theme_color_override("font_color", Color(1, 1, 1))
+	layer.add_child(name_lbl)
+
+	var desc_lbl := _make_label(UPGRADE_DESCS[key] as String, 13, Vector2(24, row_y + 26))
+	desc_lbl.add_theme_color_override("font_color", Color(0.65, 0.65, 0.75))
+	layer.add_child(desc_lbl)
+
+	var lv_lbl := _make_label("", 14, Vector2(24, row_y + 48))
+	layer.add_child(lv_lbl)
+
+	var buy_btn := Button.new()
+	buy_btn.size = Vector2(110, 44)
+	buy_btn.position = Vector2(W - 134, row_y + 14)
+	if jp_font:
+		buy_btn.add_theme_font_override("font", jp_font)
+	buy_btn.add_theme_font_size_override("font_size", 15)
+	buy_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	layer.add_child(buy_btn)
+
+	var refresh := func():
+		var lv: int = GameData.upgrade_level(key)
+		lv_lbl.text = "Lv.%d / %d" % [lv, GameData.UPGRADE_MAX_LV]
+		var cost := GameData.upgrade_cost(key)
+		if cost < 0:
+			buy_btn.text = "MAX"
+			buy_btn.disabled = true
+		else:
+			buy_btn.text = "強化 (%d)" % cost
+			buy_btn.disabled = not GameData.can_afford_upgrade(key)
+
+	buy_btn.pressed.connect(func():
+		if GameData.buy_upgrade(key):
+			balance_lbl.text = "残光: %d" % GameData.zankou
+			for r in all_refreshers:
+				r.call()
+	)
+	refresh.call()
+	return refresh
 
 func _make_label(txt: String, font_size: int, pos: Vector2) -> Label:
 	var lbl := Label.new()

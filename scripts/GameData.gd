@@ -12,8 +12,41 @@ var equipped      : Dictionary    = {}
 var unlocked_stage : int = 1
 var selected_stage  : int = 1
 
+# 2026-08-07：メタ進行「残光」。ラン終了時に生存時間に応じて貯まり、出撃前の恒久強化に使う。
+# エンドレス（stage>=META_LOCKED_STAGE）は稼ぎも適用も対象外にして、腕試しの場として純度を保つ
+const META_LOCKED_STAGE := 4
+const UPGRADE_MAX_LV := 5
+const UPGRADE_COSTS  := [15, 25, 40, 60, 90]  # Lv0→1, 1→2, ... 4→5 の必要残光
+var zankou   : int = 0
+var upgrades : Dictionary = { "hp": 0, "atk": 0, "spd": 0 }
+
 func _ready() -> void:
 	_load()
+
+func award_zankou(amount: int) -> void:
+	if amount <= 0: return
+	zankou += amount
+	_save()
+
+func upgrade_level(key: String) -> int:
+	return upgrades.get(key, 0) as int
+
+func upgrade_cost(key: String) -> int:
+	var lv: int = upgrade_level(key)
+	if lv >= UPGRADE_MAX_LV: return -1
+	return UPGRADE_COSTS[lv]
+
+func can_afford_upgrade(key: String) -> bool:
+	var cost := upgrade_cost(key)
+	return cost > 0 and zankou >= cost
+
+func buy_upgrade(key: String) -> bool:
+	if not can_afford_upgrade(key): return false
+	var cost := upgrade_cost(key)
+	zankou -= cost
+	upgrades[key] = upgrade_level(key) + 1
+	_save()
+	return true
 
 func unlock_sigil(sigil_id: String) -> void:
 	if sigil_id not in collected_ids:
@@ -57,6 +90,8 @@ func _load() -> void:
 		collected_ids.assign(loaded_ids)
 		equipped = cfg.get_value("sigils", "equipped", {})
 		unlocked_stage = cfg.get_value("progress", "unlocked_stage", 1) as int
+		zankou = cfg.get_value("meta", "zankou", 0) as int
+		upgrades = cfg.get_value("meta", "upgrades", { "hp": 0, "atk": 0, "spd": 0 })
 
 func _save() -> void:
 	var cfg := ConfigFile.new()
@@ -64,4 +99,6 @@ func _save() -> void:
 	cfg.set_value("sigils", "unlocked", collected_ids)
 	cfg.set_value("sigils", "equipped", equipped)
 	cfg.set_value("progress", "unlocked_stage", unlocked_stage)
+	cfg.set_value("meta", "zankou", zankou)
+	cfg.set_value("meta", "upgrades", upgrades)
 	cfg.save("user://save.cfg")

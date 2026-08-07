@@ -174,7 +174,10 @@ const ATTR_WEAPON_DATA := {
 	"water_pierce": { "attr": "circle",   "name": "貫通の矢",       "pattern": "projectile", "cooldown": 1.0, "dmg": 5,  "col": Color(0.7,  0.95, 1.0), "pierce": true },
 	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 55.0 },
 	"fire_chain":   { "attr": "triangle", "name": "稲妻の鎖",       "pattern": "chain",      "cooldown": 1.8, "dmg": 6,  "col": Color(1.0,  0.9,  0.3),  "jumps": 3, "range": 160.0 },
-	"earth_orbit":  { "attr": "square",   "name": "回転する紋章の盾", "pattern": "orbit",    "cooldown": 0.0, "dmg": 4,  "col": Color(0.95, 0.75, 0.3),  "radius": 34.0, "rotate_speed": 2.6 },
+	# 2026-08-07：回転する紋章の盾は判定が軌道上の薄い輪っかだけ＋自身のノックバックで敵を弾き飛ばしてしまい、
+	# 同じ土属性の衝撃波（こちらもノックバック持ち）と弾き合って当たりにくいとの指摘で「固めるビーム」に作り替えた。
+	# 最も近い敵の方向へ、太さのある一直線のビームを放ち、直線上の敵をまとめて貫通ダメージする
+	"earth_orbit":  { "attr": "square",   "name": "固めるビーム",   "pattern": "beam",       "cooldown": 1.3, "dmg": 7,  "col": Color(0.95, 0.75, 0.3),  "range": 150.0, "width": 22.0 },
 	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 95.0 },
 }
 
@@ -212,6 +215,7 @@ var hints_shown   := {}         # 表示済みヒントのフラグ
 # プレイヤー
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var player_hp    := PLAYER_HP_MAX
+var player_hp_max := PLAYER_HP_MAX  # 2026-08-07：メタ進行の体力強化で_ready()時に底上げされる
 var player_pos   := Vector2.ZERO
 var player_node  : Sprite2D = null
 var camera       : Camera2D  = null
@@ -315,6 +319,13 @@ func _ready() -> void:
 	jp_font = load("res://fonts/jp_font.ttf")
 	_load_save()
 	current_stage = GameData.selected_stage
+
+	# 2026-08-07：メタ進行（残光での恒久強化）。エンドレスでは適用せず「腕試し」の純度を保つ
+	if current_stage < GameData.META_LOCKED_STAGE:
+		player_hp_max = PLAYER_HP_MAX + GameData.upgrade_level("hp")
+		weapon_stats["damage"] = 1.0 + float(GameData.upgrade_level("atk")) * 0.05
+		weapon_stats["move_speed"] = 1.0 + float(GameData.upgrade_level("spd")) * 0.04
+	player_hp = player_hp_max
 
 	_enemy_shader_mat = ShaderMaterial.new()
 	_enemy_shader_mat.shader = ENEMY_DESATURATE_SHADER
@@ -813,6 +824,33 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 			var target := _pick_rain_target(wdata["radius"] as float)
 			if not target.is_empty():
 				_start_rain_strike(target["pos"] as Vector2, dmg, wdata["radius"] as float, col, attr, wdata.get("telegraph", 0.5) as float)
+		"beam":
+			# 2026-08-07：太さのある直線ビーム。Lvが上がるほど太さも伸びる（+10%/Lv）
+			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
+			var beam_w: float = (wdata["width"] as float) * (1.0 + float(level - 1) * 0.1)
+			_fire_beam(ally_pos, dir, dmg, wdata["range"] as float, beam_w, col, attr)
+
+func _fire_beam(from: Vector2, dir: Vector2, dmg: int, length: float, width: float, col: Color, attr: String = "") -> void:
+	var to := from + dir * length
+	for e in enemies:
+		var epos: Vector2 = e["pos"] as Vector2
+		# 線分(from-to)への垂直距離と、線分の範囲内かどうかを判定
+		var seg: Vector2 = to - from
+		var t := clampf(seg.dot(epos - from) / seg.length_squared(), 0.0, 1.0)
+		var closest: Vector2 = from + seg * t
+		if epos.distance_to(closest) < width * 0.5 + (e["radius"] as float):
+			_damage_enemy(e, dmg, attr)
+			e["flash"] = 0.12
+	var beam := Line2D.new()
+	beam.width = width
+	beam.default_color = Color(col.r, col.g, col.b, 0.75)
+	beam.add_point(from)
+	beam.add_point(to)
+	add_child(beam)
+	var tw := beam.create_tween()
+	tw.tween_property(beam, "modulate:a", 0.0, 0.16)
+	tw.tween_callback(beam.queue_free)
+	Sfx.play_shoot()
 
 func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: int, delta: float) -> void:
 	if not a.has("orbiters"):
@@ -1291,7 +1329,7 @@ func _update_items() -> void:
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
-				player_hp = mini(PLAYER_HP_MAX, player_hp + HEAL_AMOUNT)
+				player_hp = mini(player_hp_max, player_hp + HEAL_AMOUNT)
 				_heal_allies(ALLY_HEAL_FRACTION)
 				break
 			elif it["type"] == "weapon":
@@ -1406,7 +1444,7 @@ func _apply_weapon(subtype: String) -> void:
 		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
 		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
 		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
-		"draw_time":  draw_time_bonus = draw_time_bonus + 1.5
+		"draw_time":  draw_time_bonus = minf(4.0, draw_time_bonus + 0.8)  # 2026-08-07：1.5→0.8、複数回引くと10秒超で長すぎたため上限も追加
 
 func _start_weapon_select() -> void:
 	# 属性武器の取得/強化選択（6種類中、上限未満のものから最大3択）
@@ -1573,6 +1611,21 @@ func _start_attr_select() -> void:
 			layer.queue_free()
 			_start_countdown(attr)
 		)
+
+	# 2026-08-07：仲間が満タンの時は「描いても最弱と入れ替わるだけ」なので、描画の手間を省けるスキップを追加
+	if allies.size() >= MAX_ALLIES:
+		var skip_btn := Button.new()
+		skip_btn.text = "スキップ（戦闘に戻る）"
+		skip_btn.size = Vector2(total, 44)
+		skip_btn.position = Vector2(start_x, H * 0.52)
+		skip_btn.pressed.connect(func():
+			layer.queue_free()
+			game_state = "battle"
+		)
+		if jp_font:
+			skip_btn.add_theme_font_override("font", jp_font)
+		skip_btn.add_theme_font_size_override("font_size", 16)
+		layer.add_child(skip_btn)
 
 # 選択→カウントダウン→描画、の間に挟む「3・2・1」（2秒）
 func _start_countdown(attr: String) -> void:
@@ -2206,11 +2259,21 @@ func _resume_from_pause() -> void:
 		pause_layer = null
 	game_state = paused_from_state
 
+# 2026-08-07：ラン終了時に生存時間ベースで「残光」を付与。エンドレスは対象外（腕試しの純度を保つ）
+func _award_zankou(stage_cleared: bool) -> int:
+	if current_stage >= GameData.META_LOCKED_STAGE: return 0
+	var amount := int(elapsed_time / 8.0)
+	if stage_cleared:
+		amount += 20
+	GameData.award_zankou(amount)
+	return amount
+
 func _game_over() -> void:
 	game_state = "game_over"
 	Sfx.stop_bgm()
 	var is_new := elapsed_time > best_time
 	_save_best(elapsed_time)
+	var zankou_gain := _award_zankou(false)
 
 	var over_lbl := _make_label("GAME OVER", 52, Vector2(W * 0.5 - 130, H * 0.30))
 	over_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
@@ -2225,6 +2288,11 @@ func _game_over() -> void:
 	var best_lbl  := _make_label(best_txt, 22, Vector2(W * 0.5 - 80, H * 0.51))
 	best_lbl.add_theme_color_override("font_color", best_col)
 	ui_layer.add_child(best_lbl)
+
+	if zankou_gain > 0:
+		var zankou_lbl := _make_label("残光 +%d" % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.56))
+		zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
+		ui_layer.add_child(zankou_lbl)
 
 	var retry_btn := Button.new()
 	retry_btn.text = "RETRY"
@@ -2247,6 +2315,7 @@ func _stage_clear() -> void:
 	Sfx.stop_bgm()
 	GameData.clear_stage(current_stage)
 	_save_best(elapsed_time)
+	var zankou_gain := _award_zankou(true)
 
 	var clear_lbl := _make_label("STAGE CLEAR!", 46, Vector2(W * 0.5 - 148, H * 0.26))
 	clear_lbl.add_theme_color_override("font_color", Color(0.6, 1.0, 0.7))
@@ -2255,6 +2324,11 @@ func _stage_clear() -> void:
 	var score_lbl := _make_label(_fmt_time(elapsed_time) + " 生存", 26, Vector2(W * 0.5 - 70, H * 0.38))
 	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	ui_layer.add_child(score_lbl)
+
+	if zankou_gain > 0:
+		var zankou_lbl := _make_label("残光 +%d" % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.42))
+		zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
+		ui_layer.add_child(zankou_lbl)
 
 	var reward_txt: String = STAGE_CLEAR_REWARD_TEXT.get(current_stage, "") as String
 	if reward_txt != "":
@@ -2276,11 +2350,11 @@ func _stage_clear() -> void:
 # UI 更新
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _update_ui() -> void:
-	hp_lbl.text   = "HP: %d" % player_hp
+	hp_lbl.text   = "HP: %d/%d" % [player_hp, player_hp_max]
 	time_lbl.text = "%.0fs" % elapsed_time
 	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
 	frag_lbl.text = "欠片: %d/%d" % [fragment_count, fragment_threshold]
-	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(PLAYER_HP_MAX), 0.0, 1.0)
+	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(player_hp_max), 0.0, 1.0)
 	frag_bar_fill.size.x = hp_bar_w * clampf(float(fragment_count) / float(fragment_threshold), 0.0, 1.0)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2409,7 +2483,7 @@ func _draw() -> void:
 	var pulse := 0.85 + 0.15 * sin(elapsed_time * 1.2)
 	var sigil_r := 140.0
 	var sigil_col := Color(0.55, 0.55, 0.62)
-	var hp_frac := clampf(float(player_hp) / float(PLAYER_HP_MAX), 0.0, 1.0)
+	var hp_frac := clampf(float(player_hp) / float(player_hp_max), 0.0, 1.0)
 	var start_a := -PI * 0.5
 	var arc_len := TAU * hp_frac
 	if arc_len > 0.01:
