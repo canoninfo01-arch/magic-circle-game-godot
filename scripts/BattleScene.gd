@@ -56,18 +56,23 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 	"octagram":      0.92,
 }
 
-const ENEMY_SPAWN_BASE: float = 2.5
+const ENEMY_SPAWN_BASE: float = 1.3  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記）
 const ENEMY_SPEED_BASE: float = 38.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55→46→38にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
+# 2026-08-07：後退するだけで簡単にかわせてしまう問題への対処。プレイヤーが終始敵より速く・湧く数も
+# 少なかったため「囲まれる」圧が発生しなかった（VSは逆に遅いが物量で包囲する）。速度はそのままに、
+# 物量を大幅に増やす方向で対処する。O(n²)のセパレーション処理があるため上限を設けて実機負荷を抑える
+const MAX_ENEMIES: int = 90
 
 const ENEMY_TYPES := {
 	# 2026-07-27：属性相性をはっきりさせるため、シャード（速い・脆い）とヴォイドマーク（遅い・硬い）を尖らせた
 	# 2026-08-04：colorを白銀ベースに変更（彩度は天敵ウォード専用に空けるため）。本体スプライトはENEMY_DESATURATE_SHADERで
 	# 彩度を落としており、この色は死亡パーティクル（_spawn_death_particles）にのみ使われる
-	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.5,  "spd_m": 1.6  },
-	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 2.0,  "spd_m": 0.85 },
+	# 2026-08-07：物量戦にする都合、雑魚役のシャード・フラクチャーのHPを下げて「群れは弱いが数で押す」を明確化
+	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.28, "spd_m": 1.6  },
+	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 1.4,  "spd_m": 0.85 },
 	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
 }
 
@@ -110,12 +115,15 @@ const ENEMY_DESATURATE_SHADER := preload("res://shaders/enemy_desaturate.gdshade
 var _enemy_shader_mat: ShaderMaterial
 
 const FRAGMENT_THRESHOLD_BASE := 5
-const CHAR_ITEM_CHANCE  := 0.05  # 2026-07-27：0.08→0.05にさらに減速（10体到達を遅くする狙い）
+# 2026-08-07：敵の物量を大幅に増やしたぶんキル数自体が数倍に増えるため、%はそのままだと特殊アイテムの
+# 絶対数（＝画面が止まる回数）まで比例して増えてしまう。物量戦化と同時に控えめに引き下げて相殺した
+# （テンポ低下そのものへの本格対応は別課題として残っている、詳細はlog.md参照）
+const CHAR_ITEM_CHANCE  := 0.035  # 2026-07-27：0.08→0.05 / 2026-08-07：0.05→0.035
 const FIRST_CHAR_ITEM_GUARANTEE_KILLS := 3  # 2026-07-27：最初の1体は運任せにしない保証
-const HEAL_ITEM_CHANCE  := 0.05
+const HEAL_ITEM_CHANCE  := 0.035  # 2026-08-07：0.05→0.035
 const HEAL_AMOUNT       := 2
 const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
-const WEAPON_ITEM_CHANCE := 0.12  # 2026-07-18：出現率が低すぎるとの指摘で0.06→0.12に増加
+const WEAPON_ITEM_CHANCE := 0.08  # 2026-07-18：0.06→0.12 / 2026-08-07：0.12→0.08
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 9.5  # 2026-08-04：最頻出アイテムなのに一番小さくて視認しづらいとの指摘で7.0→9.5に拡大
@@ -633,9 +641,13 @@ func _spawn_enemies(delta: float) -> void:
 	# 通常スポーン
 	enemy_spawn_timer -= delta
 	if enemy_spawn_timer > 0.0: return
-	var interval := maxf(0.8, ENEMY_SPAWN_BASE - elapsed_time * 0.03)
+	# 2026-08-07：物量戦化。間隔を短縮するだけでなく、時間経過で1回あたりの同時湧き数も増やす
+	var interval := maxf(0.35, ENEMY_SPAWN_BASE - elapsed_time * 0.02)
 	enemy_spawn_timer = interval
-	_spawn_one_enemy()
+	var spawn_count := 1 + mini(3, int(elapsed_time / 90.0))
+	for _i in range(spawn_count):
+		if enemies.size() >= MAX_ENEMIES: break
+		_spawn_one_enemy()
 
 func _trigger_wave() -> void:
 	# 2026-08-04：単一属性の強制ウェーブは⑧の設計に合わせてステージ3・エンドレス限定にした
@@ -643,6 +655,7 @@ func _trigger_wave() -> void:
 	var forced: String = forced_data.get("type", "") as String
 	var count: int = forced_data.get("count", 6 + wave_count * 2) as int
 	for _i in range(count):
+		if enemies.size() >= MAX_ENEMIES: break
 		_spawn_one_enemy(forced)
 	_show_wave_flash(wave_count)
 
