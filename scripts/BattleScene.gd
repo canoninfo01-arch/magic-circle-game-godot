@@ -162,7 +162,7 @@ const SHAPE_DATA := {
 # 属性武器（2026-07-18：召喚獣ごとの武器バリエーション。属性単位で共有・武器アイテムで取得/強化）
 # 既存の基本攻撃（SHAPE_DATAのbullets）はそのまま残り、属性武器は上乗せで発動する
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const ATTR_WEAPON_MAX_LEVEL := 3
+const ATTR_WEAPON_MAX_LEVEL := 5  # 2026-08-06：3だと6種×3Lv=18回で武器アイテムが2分程度で枯渇するため5に引き上げ
 
 # pattern: "projectile"（弾。pierce/homing/explode_rはオプション）"chain"（連鎖電撃）
 #          "orbit"（常時回転する近接武器）"pulse"（自分中心の定期衝撃波）
@@ -175,7 +175,7 @@ const ATTR_WEAPON_DATA := {
 	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 55.0 },
 	"fire_chain":   { "attr": "triangle", "name": "稲妻の鎖",       "pattern": "chain",      "cooldown": 1.8, "dmg": 6,  "col": Color(1.0,  0.9,  0.3),  "jumps": 3, "range": 160.0 },
 	"earth_orbit":  { "attr": "square",   "name": "回転する紋章の盾", "pattern": "orbit",    "cooldown": 0.0, "dmg": 4,  "col": Color(0.95, 0.75, 0.3),  "radius": 34.0, "rotate_speed": 2.6 },
-	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 75.0 },
+	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 95.0 },
 }
 
 # tier2/3の紋章形態も基礎属性として扱う（どの形態でも同じ属性武器を使える）
@@ -292,6 +292,9 @@ var summon_result_nodes : Array[Node] = []
 # UI
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 var ui_layer      : CanvasLayer = null
+var pause_btn     : Button      = null
+var pause_layer   : CanvasLayer = null
+var paused_from_state := "battle"
 var hp_lbl        : Label       = null
 var time_lbl      : Label       = null
 var ally_lbl      : Label       = null
@@ -342,7 +345,6 @@ func _ready() -> void:
 	_build_ui()
 	_build_draw_layer()
 	_build_player()
-	_add_ally("triangle", 1, false)
 
 func _build_player() -> void:
 	player_node = Sprite2D.new()
@@ -401,6 +403,16 @@ func _build_ui() -> void:
 	frag_bar_fill.position = Vector2(14, 88)
 	frag_bar_fill.size = Vector2(0.0, 6)
 	ui_layer.add_child(frag_bar_fill)
+
+	pause_btn = Button.new()
+	pause_btn.text = "II"
+	pause_btn.size = Vector2(40, 32)
+	pause_btn.position = Vector2(W - 46, 44)
+	pause_btn.pressed.connect(_open_pause_menu)
+	if jp_font:
+		pause_btn.add_theme_font_override("font", jp_font)
+	pause_btn.add_theme_font_size_override("font_size", 16)
+	ui_layer.add_child(pause_btn)
 
 func _make_glow_panel(pos: Vector2, size: Vector2, border_col: Color) -> Panel:
 	var panel := Panel.new()
@@ -541,7 +553,7 @@ func _process(delta: float) -> void:
 			_update_particles(delta)
 		"drawing":
 			_update_drawing(delta)
-		"game_over", "stage_clear":
+		"game_over", "stage_clear", "paused":
 			pass
 
 func _update_player(delta: float) -> void:
@@ -794,7 +806,9 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 		"chain":
 			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr)
 		"pulse":
-			_fire_pulse(ally_pos, dmg, wdata["radius"] as float, col, attr)
+			# 2026-08-06：範囲攻撃はダメージだけでなくAoE半径もLvに連動させる（Lv1〜5、+8%/Lv）
+			var pulse_r: float = (wdata["radius"] as float) * (1.0 + float(level - 1) * 0.08)
+			_fire_pulse(ally_pos, dmg, pulse_r, col, attr)
 		"rain":
 			var target := _pick_rain_target(wdata["radius"] as float)
 			if not target.is_empty():
@@ -1079,6 +1093,8 @@ func _update_bullets(delta: float) -> void:
 				hit = true
 				if pierce:
 					hit_set.append(e)
+					# 2026-08-06：貫通弾は弾が消えないぶん「当たった感」が薄いとの指摘で、着弾点に小さな火花を追加
+					_spawn_hit_spark(b["pos"] as Vector2, b["col"] as Color)
 				var explode_r: float = b.get("explode_r", 0.0)
 				if explode_r > 0.0:
 					_explode_at(b["pos"] as Vector2, b["dmg"] as int, explode_r, b["col"] as Color, e, b.get("attr", "") as String)
@@ -1137,6 +1153,17 @@ func _on_enemy_death(e: Dictionary) -> void:
 		_spawn_weapon_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
 	enemies.erase(e)
+
+func _spawn_hit_spark(pos: Vector2, col: Color) -> void:
+	for _i in range(3):
+		var angle := randf() * TAU
+		var spd   := randf_range(50.0, 110.0)
+		var node  := Polygon2D.new()
+		node.polygon = _make_ngon(3, 4.0)
+		node.color   = Color(col.r * 1.5, col.g * 1.5, col.b * 1.5, 1.0)
+		node.position = pos
+		add_child(node)
+		particles.append({ "node": node, "vel": Vector2(cos(angle), sin(angle)) * spd, "life": 1.0 })
 
 func _spawn_death_particles(pos: Vector2, col: Color, r: float) -> void:
 	for _i in range(6):
@@ -1847,16 +1874,19 @@ func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> v
 
 	var dmg      := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
 	var kb_force := 220.0 + minf(260.0, float(power) * 3.5)
+	# 2026-08-06：見た目のリングだけpowerで広がり実際の判定は固定半径のままだったズレを解消。
+	# 厚塗りが強いほど範囲攻撃の当たり判定自体も広がるようにし、一発逆転感を演出だけでなく実効果にも反映
+	var burst_r := SUMMON_BURST_R * (1.0 + minf(0.7, float(power) / 150.0))
 	for e in enemies:
 		var diff: Vector2 = (e["pos"] as Vector2) - pos
 		var dist := diff.length()
-		if dist < SUMMON_BURST_R:
+		if dist < burst_r:
 			_damage_enemy(e, dmg, attr)
 			e["flash"] = 0.12
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
 
-	var visual_r := SUMMON_BURST_R * (1.0 + minf(0.7, float(power) / 150.0))
+	var visual_r := burst_r
 	var ring := Line2D.new()
 	ring.width = 4.0 + minf(6.0, float(power) * 0.05)
 	ring.default_color = col
@@ -2120,6 +2150,61 @@ func _save_best(t: float) -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("score", "best_time", best_time)
 	cfg.save("user://save.cfg")
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 一時停止（2026-08-06追加）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+func _open_pause_menu() -> void:
+	if game_state != "battle": return
+	paused_from_state = game_state
+	game_state = "paused"
+	joy_vec = Vector2.ZERO
+	joy_id = -1
+
+	pause_layer = CanvasLayer.new()
+	pause_layer.layer = 30
+	add_child(pause_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.size = Vector2(W, H)
+	pause_layer.add_child(dim)
+
+	var title := _make_label("一時停止中", 30, Vector2(W * 0.5 - 90, H * 0.30))
+	title.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	pause_layer.add_child(title)
+
+	var resume_btn := Button.new()
+	resume_btn.text = "再開"
+	resume_btn.size = Vector2(180, 56)
+	resume_btn.position = Vector2(W * 0.5 - 90, H * 0.42)
+	resume_btn.pressed.connect(_resume_from_pause)
+	pause_layer.add_child(resume_btn)
+
+	var restart_btn := Button.new()
+	restart_btn.text = "リスタート"
+	restart_btn.size = Vector2(180, 56)
+	restart_btn.position = Vector2(W * 0.5 - 90, H * 0.51)
+	restart_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	pause_layer.add_child(restart_btn)
+
+	var stage_select_btn := Button.new()
+	stage_select_btn.text = "ステージ選択へ"
+	stage_select_btn.size = Vector2(180, 56)
+	stage_select_btn.position = Vector2(W * 0.5 - 90, H * 0.60)
+	stage_select_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn"))
+	pause_layer.add_child(stage_select_btn)
+
+	for btn in [resume_btn, restart_btn, stage_select_btn]:
+		btn.add_theme_font_size_override("font_size", 22)
+	if jp_font:
+		_apply_font(pause_layer, jp_font)
+
+func _resume_from_pause() -> void:
+	if pause_layer:
+		pause_layer.queue_free()
+		pause_layer = null
+	game_state = paused_from_state
 
 func _game_over() -> void:
 	game_state = "game_over"
