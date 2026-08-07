@@ -1058,7 +1058,9 @@ func _ally_attack(a: Dictionary) -> void:
 	if nearest.is_empty(): return
 	Sfx.play_shoot()
 
-	var dmg: int          = int(BULLET_DMG_BASE * (weapon_stats["damage"] as float))
+	# 2026-08-07：基本攻撃はtier・厚塗り(coating)を一切反映しておらず、どの仲間も同じ強さに見える
+	# 原因になっていたため、属性武器と同じtier・厚塗り倍率(_ally_weapon_tier_mult)を乗せるように変更
+	var dmg: int          = int(float(BULLET_DMG_BASE) * (weapon_stats["damage"] as float) * _ally_weapon_tier_mult(a))
 	var base_dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 	var bullet_col: Color = SHAPE_DATA[shape]["color"]
 
@@ -1905,6 +1907,7 @@ func _spawn_ally_at(shape: String, power: int, pos: Vector2, burst: bool = true)
 	add_child(node)
 	_attach_ally_idle_motion(node)
 	_attach_sigil_ring(node, sz, power)
+	_attach_power_aura(node, sz, power)
 	allies.append({
 		"shape": shape, "hp": hp, "max_hp": hp, "coating": power,
 		"node": node, "attack_timer": randf_range(0.0, ATTACK_INTERVAL),
@@ -2025,6 +2028,22 @@ func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	var tw := ring.create_tween()
 	tw.set_loops()
 	tw.tween_property(ring, "rotation", TAU, 6.0).from(0.0)
+
+# 2026-08-07：厚塗りの強さがリング以外で伝わらないとの指摘を受け、強い仲間だけに柔らかいオーラを追加
+func _attach_power_aura(parent: Node2D, sz: float, power: int) -> void:
+	if power < 30: return
+	var strong := power >= 70
+	var aura := Polygon2D.new()
+	aura.polygon = _make_ngon(20, sz * (2.0 if strong else 1.6))
+	var col := Color(1.0, 0.92, 0.55) if strong else Color(0.85, 0.85, 0.95)
+	aura.color = Color(col.r, col.g, col.b, 0.28 if strong else 0.16)
+	aura.z_index = -1
+	parent.add_child(aura)
+
+	var tw := aura.create_tween()
+	tw.set_loops()
+	tw.tween_property(aura, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(aura, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _make_ring_points(radius: float, arc_frac: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
@@ -2449,8 +2468,10 @@ func _ally_color(shape: String, coating: int) -> Color:
 		col = col.lerp(Color.WHITE, minf(0.4, float(coating - 3) * 0.1))
 	return col
 
-func _ally_size(_coating: int) -> float:
-	return ALLY_BASE_SIZE
+func _ally_size(coating: int) -> float:
+	# 2026-08-07：サイズ変化なし方針だったが、厚塗りの強さが見た目で全く伝わらないとの指摘で
+	# ごくわずかに（最大+22%）だけ連動させる。衝突判定（ALLY_BASE_SIZE固定）はあえて変えない
+	return ALLY_BASE_SIZE * (1.0 + minf(0.22, float(coating) / 320.0))
 
 func _random_edge_pos() -> Vector2:
 	var hw := W * 0.5 + 60.0
