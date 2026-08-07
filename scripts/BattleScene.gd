@@ -521,7 +521,9 @@ func _build_draw_layer() -> void:
 		guide_rune_root.add_child(mark)
 		guide_rune_marks.append(mark)
 
-	draw_timer_lbl = _make_label("8.0", 36, Vector2(W * 0.5 - 28, H * 0.08))
+	# 2026-08-07：タイマー表示は元々✓ボタンと同じ上部にあったが、ボタンを大きく・中央に据えるため
+	# 下部（カバー率・厚塗り数と同じクラスタ）に移動した
+	draw_timer_lbl = _make_label("8.0", 32, Vector2(W * 0.5 - 26, H * 0.68))
 	draw_timer_lbl.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	draw_layer.add_child(draw_timer_lbl)
 
@@ -533,10 +535,23 @@ func _build_draw_layer() -> void:
 	coating_lbl.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
 	draw_layer.add_child(coating_lbl)
 
+	# 2026-08-07：小さくて押しにくいとの指摘で、上部中央いっぱいに大型化（64x52→220x84）
 	confirm_btn = Button.new()
-	confirm_btn.text = "✓"
-	confirm_btn.size = Vector2(64, 52)
-	confirm_btn.position = Vector2(W - 74, H * 0.05)
+	confirm_btn.text = "✓ ラップ確定"
+	confirm_btn.size = Vector2(220, 84)
+	confirm_btn.position = Vector2(W * 0.5 - 110, 8)
+	confirm_btn.add_theme_font_size_override("font_size", 24)
+	var confirm_sb := StyleBoxFlat.new()
+	confirm_sb.bg_color = Color(0.1, 0.14, 0.2, 0.88)
+	confirm_sb.set_corner_radius_all(16)
+	confirm_sb.set_border_width_all(3)
+	confirm_sb.border_color = Color(0.6, 0.85, 1.0, 0.9)
+	confirm_sb.shadow_color = Color(0.5, 0.75, 1.0, 0.4)
+	confirm_sb.shadow_size = 10
+	confirm_btn.add_theme_stylebox_override("normal", confirm_sb)
+	confirm_btn.add_theme_stylebox_override("hover", confirm_sb)
+	confirm_btn.add_theme_stylebox_override("pressed", confirm_sb)
+	confirm_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	confirm_btn.pressed.connect(_evaluate_lap)
 	draw_layer.add_child(confirm_btn)
 
@@ -2104,6 +2119,14 @@ func _evaluate_lap() -> void:
 		_spawn_lap_pulse(col)
 		_show_combo_flash(coating_count)
 	_show_lap_flash(label, col)
+	_flash_confirm_btn(col)
+
+# 2026-08-07：ボタンが小さく押しにくかった件の対処と合わせて、押した直後にボタン自体も
+# 判定色でパッと光らせて「押せた・1周終わった」がその場でわかるようにする
+func _flash_confirm_btn(col: Color) -> void:
+	confirm_btn.modulate = Color(col.r * 1.6, col.g * 1.6, col.b * 1.6)
+	var tw := confirm_btn.create_tween()
+	tw.tween_property(confirm_btn, "modulate", Color.WHITE, 0.35)
 
 func _show_combo_flash(count: int) -> void:
 	# 連続成功回数そのものを大きく見せて「積み上がってる」実感を明示する

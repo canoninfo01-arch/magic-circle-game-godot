@@ -27,9 +27,11 @@ const SIGIL_DATA := {
 	},
 	"circle_3": {
 		"attribute": "circle", "tier": 3, "guide_scale": 1.3,
+		# 2026-08-07：星が小さく内側に孤立していて「丸の中に浮いた別の図形」に見えると指摘を受け、
+		# 星の頂点が外周の丸に触れる大きさまで拡大（0.42→0.92）。「丸に星の頂点がつく」見た目に
 		"contours": [
 			{"shape": "circle", "radius_ratio": 1.0, "weight": 0.6},
-			{"shape": "star5", "radius_ratio": 0.42, "weight": 0.4},
+			{"shape": "star5", "radius_ratio": 0.92, "weight": 0.4},
 		],
 		"spawn_shape": "double_circle",
 		"lap_gain": {"perfect": 70, "great": 40, "good": 20},
@@ -51,8 +53,12 @@ const SIGIL_DATA := {
 	},
 	"triangle_3": {
 		"attribute": "triangle", "tier": 3, "guide_scale": 1.3,
-		# 単体・フルサイズの六芒星（三角2つの意味）。外形に包まれた入れ子ではない
-		"contours": [{"shape": "star6", "radius_ratio": 1.0, "weight": 1.0}],
+		# 2026-08-07：単体の星形アウトライン（star6）は内側の角が鋭角すぎ、中に交差する線も無かったため、
+		# 本物の六芒星の構造（正三角形×2、上向き＋下向き）に作り替え。実際に線が交差する見た目になる
+		"contours": [
+			{"shape": "triangle",     "radius_ratio": 1.0, "weight": 0.5},
+			{"shape": "triangle_inv", "radius_ratio": 1.0, "weight": 0.5},
+		],
 		"spawn_shape": "hexagram",
 		"lap_gain": {"perfect": 70, "great": 40, "good": 20},
 	},
@@ -73,8 +79,12 @@ const SIGIL_DATA := {
 	},
 	"square_3": {
 		"attribute": "square", "tier": 3, "guide_scale": 1.3,
-		# 単体・フルサイズの八芒星（四角2つの意味）。外形に包まれた入れ子ではない
-		"contours": [{"shape": "star8", "radius_ratio": 1.0, "weight": 1.0}],
+		# 2026-08-07：単体の星形アウトライン（star8）から、正方形×2（通常＋45度回転）の構造に作り替え。
+		# 六芒星と同じ理由（内角が鋭角すぎる・交差する線が無い）への対処
+		"contours": [
+			{"shape": "square",    "radius_ratio": 1.0, "weight": 0.5},
+			{"shape": "square_45", "radius_ratio": 1.0, "weight": 0.5},
+		],
 		"spawn_shape": "octagram",
 		"lap_gain": {"perfect": 70, "great": 40, "good": 20},
 	},

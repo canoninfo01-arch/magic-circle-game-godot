@@ -26,6 +26,26 @@ static func make_guide_pts(shape: String, cx: float, cy: float, r: float) -> Pac
 			for e in range(4):
 				for i in range(101):
 					pts.append(v[e].lerp(v[e + 1], float(i) / 100.0))
+		# 2026-08-07：tier3の六芒星/八芒星を「単体の星形アウトライン」から「三角/四角を2つ重ねた本物の合成紋章」に
+		# 作り替えるための追加形状。内側に交差する線ができ、内角が鋭角すぎる問題も解消する
+		"triangle_inv":
+			var v: Array[Vector2] = []
+			for i in range(3):
+				var a := float(i) / 3.0 * TAU + PI / 2.0
+				v.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
+			v.append(v[0])
+			for e in range(3):
+				for i in range(101):
+					pts.append(v[e].lerp(v[e + 1], float(i) / 100.0))
+		"square_45":
+			var v: Array[Vector2] = []
+			for i in range(4):
+				var a := float(i) / 4.0 * TAU
+				v.append(Vector2(cx + cos(a) * r, cy + sin(a) * r))
+			v.append(v[0])
+			for e in range(4):
+				for i in range(101):
+					pts.append(v[e].lerp(v[e + 1], float(i) / 100.0))
 		"star5", "star6", "star8":
 			var n := 5
 			if shape == "star6": n = 6
