@@ -120,10 +120,16 @@ var _enemy_shader_mat: ShaderMaterial
 # 確実に貯まる欠片ベースの可視カウンターに統一（あと何個で次の召喚かがHUDでわかる）
 const FRAGMENT_THRESHOLD_BASE := 15
 const FRAGMENT_THRESHOLD_GROWTH := 3  # 発動のたびに次の閾値を+3（終盤の物量戦化に合わせ、旧+1より速く抑制）
-const HEAL_ITEM_CHANCE  := 0.035  # 2026-08-07：0.05→0.035
+# 2026-08-08：単純なキル毎%だと、敵の物量戦化でキル数が跳ねた瞬間（＝一番忙しい瞬間）に
+# ドロップも比例して殺到してしまう。回復はHPが減るほど出やすくなる需要ベースの確率に変更しつつ、
+# クールダウンで絶対量に天井を設けた（需要が煽っても際限なく出ないように）。武器はクールダウンのみ追加
+const HEAL_ITEM_BASE_CHANCE := 0.01  # HP満タン時の下限
+const HEAL_ITEM_HP_SCALE    := 0.10  # HPが0%に近づくほど、この分だけ確率が上乗せされる
+const HEAL_ITEM_COOLDOWN    := 7.0   # 秒。これより短い間隔では絶対に連続ドロップしない
 const HEAL_AMOUNT       := 2
 const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
 const WEAPON_ITEM_CHANCE := 0.08  # 2026-07-18：0.06→0.12 / 2026-08-07：0.12→0.08
+const WEAPON_ITEM_COOLDOWN := 5.0  # 秒。回復と同じ理由でクールダウンを追加
 const ITEM_PICKUP_R    := 38.0
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 9.5  # 2026-08-04：最頻出アイテムなのに一番小さくて視認しづらいとの指摘で7.0→9.5に拡大
@@ -265,6 +271,8 @@ var bullets : Array[Dictionary] = []
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # item: { type:"fragment"|"char", subtype:String, pos, node:Polygon2D }
 var items : Array[Dictionary] = []
+var last_heal_drop_time   := -999.0  # 2026-08-08：クールダウン計算用。開始直後から出せるよう大きく負の値で初期化
+var last_weapon_drop_time := -999.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 描画フェーズ
@@ -1208,9 +1216,15 @@ func _on_enemy_death(e: Dictionary) -> void:
 	_spawn_fragment(e["pos"] as Vector2)
 	# 2026-08-08：キャラアイテム（召喚）はランダム抽選をやめ、欠片を集めて閾値に達したときだけドロップする
 	# 確実なトリガーに変更（_update_itemsの欠片ピックアップ処理を参照）
-	if randf() < HEAL_ITEM_CHANCE:
+	# 2026-08-08：回復はHPが減るほど出やすい需要ベースの確率＋クールダウン。武器は既存%にクールダウンのみ追加。
+	# どちらも「一番忙しい瞬間（=物量に押されてる時）にドロップが殺到する」のを防ぐのが狙い
+	var hp_frac := float(player_hp) / float(player_hp_max)
+	var heal_chance := HEAL_ITEM_BASE_CHANCE + (1.0 - hp_frac) * HEAL_ITEM_HP_SCALE
+	if elapsed_time - last_heal_drop_time >= HEAL_ITEM_COOLDOWN and randf() < heal_chance:
+		last_heal_drop_time = elapsed_time
 		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
-	elif randf() < WEAPON_ITEM_CHANCE:
+	elif elapsed_time - last_weapon_drop_time >= WEAPON_ITEM_COOLDOWN and randf() < WEAPON_ITEM_CHANCE:
+		last_weapon_drop_time = elapsed_time
 		_spawn_weapon_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
 	enemies.erase(e)
