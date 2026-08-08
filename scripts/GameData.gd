@@ -17,8 +17,10 @@ var selected_stage  : int = 1
 const META_LOCKED_STAGE := 4
 const UPGRADE_MAX_LV := 5
 const UPGRADE_COSTS  := [15, 25, 40, 60, 90]  # Lv0→1, 1→2, ... 4→5 の必要残光
+# 2026-08-08：欠片カード（攻撃速度/ダメージ/移動速度/描画時間の3択ポップアップ）を廃止し、
+# 4効果を全て残光の恒久強化に統合。atk/spdは既存枠を流用、atk_speed/draw_timeは新設
 var zankou   : int = 0
-var upgrades : Dictionary = { "hp": 0, "atk": 0, "spd": 0 }
+var upgrades : Dictionary = { "hp": 0, "atk": 0, "spd": 0, "atk_speed": 0, "draw_time": 0 }
 
 func _ready() -> void:
 	_load()
@@ -91,7 +93,7 @@ func _load() -> void:
 		equipped = cfg.get_value("sigils", "equipped", {})
 		unlocked_stage = cfg.get_value("progress", "unlocked_stage", 1) as int
 		zankou = cfg.get_value("meta", "zankou", 0) as int
-		upgrades = cfg.get_value("meta", "upgrades", { "hp": 0, "atk": 0, "spd": 0 })
+		upgrades = cfg.get_value("meta", "upgrades", { "hp": 0, "atk": 0, "spd": 0, "atk_speed": 0, "draw_time": 0 })
 
 func _save() -> void:
 	var cfg := ConfigFile.new()

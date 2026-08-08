@@ -114,12 +114,12 @@ const ENEMY_SPRITE_CONTENT_RATIO := {
 const ENEMY_DESATURATE_SHADER := preload("res://shaders/enemy_desaturate.gdshader")
 var _enemy_shader_mat: ShaderMaterial
 
-const FRAGMENT_THRESHOLD_BASE := 5
-# 2026-08-07：敵の物量を大幅に増やしたぶんキル数自体が数倍に増えるため、%はそのままだと特殊アイテムの
-# 絶対数（＝画面が止まる回数）まで比例して増えてしまう。物量戦化と同時に控えめに引き下げて相殺した
-# （テンポ低下そのものへの本格対応は別課題として残っている、詳細はlog.md参照）
-const CHAR_ITEM_CHANCE  := 0.035  # 2026-07-27：0.08→0.05 / 2026-08-07：0.05→0.035
-const FIRST_CHAR_ITEM_GUARANTEE_KILLS := 3  # 2026-07-27：最初の1体は運任せにしない保証
+# 2026-08-08：欠片カード（攻撃速度/ダメージ/移動速度/描画時間の3択ポップアップ）は廃止。
+# 4効果は全て残光の恒久強化に移行した（GameData.gd参照）。欠片アイテム自体は残すが、役割を
+# 「集めるとキャラアイテム（召喚）がドロップする」トリガーに変更。3.5%のランダム抽選も廃止し、
+# 確実に貯まる欠片ベースの可視カウンターに統一（あと何個で次の召喚かがHUDでわかる）
+const FRAGMENT_THRESHOLD_BASE := 15
+const FRAGMENT_THRESHOLD_GROWTH := 3  # 発動のたびに次の閾値を+3（終盤の物量戦化に合わせ、旧+1より速く抑制）
 const HEAL_ITEM_CHANCE  := 0.035  # 2026-08-07：0.05→0.035
 const HEAL_AMOUNT       := 2
 const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
@@ -139,14 +139,12 @@ const ATTACK_INTERVAL       := 0.7
 const PLAYER_ATTACK_INTERVAL := 1.2
 const PLAYER_BULLET_DMG      := 4
 
-const DRAW_DURATION    := 6.5  # 2026-07-27：8.0から短縮（延長は欠片カードの新選択肢で対応）
+const DRAW_DURATION    := 6.5  # 2026-07-27：8.0から短縮（延長は残光の恒久強化「描画時間強化」で対応、2026-08-08）
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
 const DRAW_BRUSH_R     := 18.0  # 2026-07-27：ブラシ半径は紋章サイズに関わらず絶対px固定（tierが上がっても許容範囲を広げない）
 const MISS_GAIN        := 3  # 2026-07-27：MISSでも召喚不能にならないよう最低限の加点を入れる
 const COATING_DMG_K    := 0.005  # 属性武器ダメージの厚塗り係数（1.0 + coating_power×K、要調整）
-
-const WEAPON_SUBTYPES  := ["atk_speed", "damage", "move_speed", "draw_time"]  # 2026-07-27：描画時間アップを追加、4種から3択
 
 const SHAPE_DATA := {
 	# 役割：水=速攻・機動／火=重火力・鈍足／土=盾・耐久（2026-07-12 属性名と役割の対応を再整理。「角の数=弾の数」ルールは廃止）
@@ -275,7 +273,7 @@ var draw_shape       := "circle"          # 属性名（circle/triangle/square�
 var draw_sigil_id    := "circle_1"        # 装備中の紋章id（Sigils.SIGIL_DATA参照）。描画ガイド・召喚結果を決める
 var current_guide_r  := DRAW_GUIDE_R      # 装備tierのguide_scaleを反映した、今セッションの紋章半径
 var brush_ratio_mult := 1.0               # ペン太さの倍率。将来アイテムで調整する余地として用意（現状は常に1.0）
-var draw_time_bonus  := 0.0               # 欠片カード「描画時間アップ」で加算される秒数（2026-07-27）
+var draw_time_bonus  := 0.0               # 残光「描画時間強化」の恒久ボーナス秒数（2026-08-08：_ready()で設定、以後固定）
 var draw_timer       := 0.0
 var coating_count    := 0
 var coating_power    := 0
@@ -315,9 +313,7 @@ var hp_bar_fill   : ColorRect   = null
 var frag_bar_fill : ColorRect   = null
 var hp_bar_w      := 130.0
 var fragment_count := 0
-var fragment_threshold := FRAGMENT_THRESHOLD_BASE  # 2026-07-27：発動のたびに引き上げる（後半のカード頻発を抑制）
-var kills_without_char_item := 0
-var got_first_char_item := false
+var fragment_threshold := FRAGMENT_THRESHOLD_BASE  # 2026-08-08：貯まるとキャラアイテム（召喚）がドロップする。発動のたびFRAGMENT_THRESHOLD_GROWTHずつ引き上げ
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 初期化
@@ -329,10 +325,13 @@ func _ready() -> void:
 	current_stage = GameData.selected_stage
 
 	# 2026-08-07：メタ進行（残光での恒久強化）。エンドレスでは適用せず「腕試し」の純度を保つ
+	# 2026-08-08：欠片カード廃止に伴い、旧カードの攻撃速度・描画時間アップ効果もここに統合
 	if current_stage < GameData.META_LOCKED_STAGE:
 		player_hp_max = PLAYER_HP_MAX + GameData.upgrade_level("hp")
 		weapon_stats["damage"] = 1.0 + float(GameData.upgrade_level("atk")) * 0.05
 		weapon_stats["move_speed"] = 1.0 + float(GameData.upgrade_level("spd")) * 0.04
+		weapon_stats["atk_speed"] = 1.0 + float(GameData.upgrade_level("atk_speed")) * 0.08
+		draw_time_bonus = float(GameData.upgrade_level("draw_time")) * 0.6
 	player_hp = player_hp_max
 
 	_enemy_shader_mat = ShaderMaterial.new()
@@ -408,7 +407,7 @@ func _build_ui() -> void:
 	ally_lbl = _make_label("仲間: 0", 14, Vector2(14, 50))
 	ui_layer.add_child(ally_lbl)
 
-	frag_lbl = _make_label("欠片: 0/%d" % fragment_threshold, 14, Vector2(14, 72))
+	frag_lbl = _make_label("召喚まで: 0/%d" % fragment_threshold, 14, Vector2(14, 72))
 	ui_layer.add_child(frag_lbl)
 
 	var frag_bar_bg := ColorRect.new()
@@ -1207,15 +1206,9 @@ func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
 	_spawn_fragment(e["pos"] as Vector2)
-	var force_char_item := false
-	if not got_first_char_item:
-		kills_without_char_item += 1
-		if kills_without_char_item >= FIRST_CHAR_ITEM_GUARANTEE_KILLS:
-			force_char_item = true
-	if force_char_item or randf() < CHAR_ITEM_CHANCE:
-		got_first_char_item = true
-		_spawn_char_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
-	elif randf() < HEAL_ITEM_CHANCE:
+	# 2026-08-08：キャラアイテム（召喚）はランダム抽選をやめ、欠片を集めて閾値に達したときだけドロップする
+	# 確実なトリガーに変更（_update_itemsの欠片ピックアップ処理を参照）
+	if randf() < HEAL_ITEM_CHANCE:
 		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	elif randf() < WEAPON_ITEM_CHANCE:
 		_spawn_weapon_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
@@ -1346,8 +1339,8 @@ func _update_items() -> void:
 				fragment_count += 1
 				if fragment_count >= fragment_threshold:
 					fragment_count -= fragment_threshold
-					fragment_threshold += 1  # 2026-07-27：発動のたびに次の閾値を引き上げる（後半のカード頻発を抑制）
-					_start_upgrade_select()
+					fragment_threshold += FRAGMENT_THRESHOLD_GROWTH
+					_spawn_char_item(player_pos + Vector2(randf_range(-16.0, 16.0), randf_range(-16.0, 16.0)))
 				break
 			elif it["type"] == "char":
 				Sfx.play_item()
@@ -1370,111 +1363,6 @@ func _update_items() -> void:
 				break
 	for i in range(to_remove.size() - 1, -1, -1):
 		items.remove_at(to_remove[i])
-
-func _start_upgrade_select() -> void:
-	game_state = "upgrade_select"
-	# ランダム3択（重複なし）
-	var pool := WEAPON_SUBTYPES.duplicate()
-	pool.shuffle()
-	var choices: Array[String] = []
-	for c in pool.slice(0, 3): choices.append(c as String)
-
-	var layer := CanvasLayer.new()
-	layer.layer = 10
-	add_child(layer)
-
-	# 暗幕
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
-	dim.size  = Vector2(W, H)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(dim)
-
-	var title := _make_label("パワーアップ選択", 22, Vector2(W * 0.5 - 90, H * 0.18))
-	title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
-	layer.add_child(title)
-
-	var labels := {
-		"atk_speed":  ["攻撃速度アップ", "+20% 攻撃速度"],
-		"damage":     ["ダメージアップ", "+30% 弾ダメージ"],
-		"move_speed": ["移動速度アップ", "+15% 移動速度"],
-		"draw_time":  ["描画時間アップ", "+1.5秒 描画時間"],
-	}
-	var accent_cols := {
-		"atk_speed":  Color(0.4, 1.0, 1.0),
-		"damage":     Color(1.0, 0.45, 0.3),
-		"move_speed": Color(0.5, 1.0, 0.6),
-		"draw_time":  Color(0.85, 0.6, 1.0),
-	}
-	var card_w := 108.0
-	var gap    := 12.0
-	var total  := card_w * 3.0 + gap * 2.0
-	var start_x := (W - total) * 0.5
-
-	for ci in range(choices.size()):
-		var ch    := choices[ci] as String
-		var info  := labels[ch] as Array
-		var accent: Color = accent_cols[ch] as Color
-		var cx    := start_x + ci * (card_w + gap)
-		var cy    := H * 0.30
-
-		var card := Button.new()
-		card.size = Vector2(card_w, 180)
-		card.position = Vector2(cx, cy)
-		card.text = ""
-		if jp_font:
-			card.add_theme_font_override("font", jp_font)
-		card.add_theme_font_size_override("font_size", 14)
-
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0.05, 0.05, 0.11, 0.9)
-		sb.set_corner_radius_all(12)
-		sb.set_border_width_all(2)
-		sb.border_color = accent
-		sb.shadow_color = Color(accent.r, accent.g, accent.b, 0.45)
-		sb.shadow_size = 10
-		card.add_theme_stylebox_override("normal", sb)
-		var sb_hover := sb.duplicate() as StyleBoxFlat
-		sb_hover.bg_color = Color(0.1, 0.1, 0.18, 0.95)
-		card.add_theme_stylebox_override("hover", sb_hover)
-		card.add_theme_stylebox_override("pressed", sb_hover)
-		card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		layer.add_child(card)
-
-		var icon := Polygon2D.new()
-		icon.polygon = _make_star_pts(4, 20.0, 0.4)
-		icon.color = accent
-		icon.position = Vector2(cx + card_w * 0.5, cy + 40)
-		layer.add_child(icon)
-		var icon_tw := icon.create_tween()
-		icon_tw.set_loops()
-		icon_tw.tween_property(icon, "rotation", TAU, 4.0).from(0.0)
-
-		var head := _make_label(info[0] as String, 15, Vector2(cx + 10, cy + 78))
-		head.custom_minimum_size = Vector2(card_w - 20, 40)
-		head.autowrap_mode = TextServer.AUTOWRAP_WORD
-		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		head.add_theme_color_override("font_color", accent)
-		layer.add_child(head)
-
-		var desc := _make_label(info[1] as String, 13, Vector2(cx + 10, cy + 130))
-		desc.custom_minimum_size = Vector2(card_w - 20, 30)
-		desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
-		layer.add_child(desc)
-
-		card.pressed.connect(func():
-			_apply_weapon(ch)
-			layer.queue_free()
-			game_state = "battle"
-		)
-
-func _apply_weapon(subtype: String) -> void:
-	match subtype:
-		"atk_speed":    weapon_stats["atk_speed"]   = (weapon_stats["atk_speed"]   as float) + 0.2
-		"damage":       weapon_stats["damage"]       = (weapon_stats["damage"]       as float) + 0.3
-		"move_speed": weapon_stats["move_speed"] = (weapon_stats["move_speed"] as float) + 0.15
-		"draw_time":  draw_time_bonus = minf(4.0, draw_time_bonus + 0.8)  # 2026-08-07：1.5→0.8、複数回引くと10秒超で長すぎたため上限も追加
 
 func _start_weapon_select() -> void:
 	# 属性武器の取得/強化選択（6種類中、上限未満のものから最大3択）
@@ -2408,7 +2296,7 @@ func _update_ui() -> void:
 	hp_lbl.text   = "HP: %d/%d" % [player_hp, player_hp_max]
 	time_lbl.text = "%.0fs" % elapsed_time
 	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
-	frag_lbl.text = "欠片: %d/%d" % [fragment_count, fragment_threshold]
+	frag_lbl.text = "召喚まで: %d/%d" % [fragment_count, fragment_threshold]
 	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(player_hp_max), 0.0, 1.0)
 	frag_bar_fill.size.x = hp_bar_w * clampf(float(fragment_count) / float(fragment_threshold), 0.0, 1.0)
 

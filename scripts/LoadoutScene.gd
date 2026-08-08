@@ -23,9 +23,16 @@ var chip_buttons: Dictionary = {}  # sigil_id -> Button
 var stage_buttons: Dictionary = {}  # stage(int) -> Button
 
 # 2026-08-07：メタ進行「残光」の恒久強化
-const UPGRADE_ORDER  := ["hp", "atk", "spd"]
-const UPGRADE_LABELS := { "hp": "体力強化", "atk": "攻撃強化", "spd": "機動強化" }
-const UPGRADE_DESCS  := { "hp": "最大HP +1/Lv", "atk": "全弾ダメージ +5%/Lv", "spd": "移動速度 +4%/Lv" }
+# 2026-08-08：欠片カード廃止に伴い、攻撃速度・描画時間アップの2枠を追加（旧カード効果の統合先）
+const UPGRADE_ORDER  := ["hp", "atk", "spd", "atk_speed", "draw_time"]
+const UPGRADE_LABELS := {
+	"hp": "体力強化", "atk": "攻撃強化", "spd": "機動強化",
+	"atk_speed": "速射強化", "draw_time": "描画時間強化",
+}
+const UPGRADE_DESCS  := {
+	"hp": "最大HP +1/Lv", "atk": "全弾ダメージ +5%/Lv", "spd": "移動速度 +4%/Lv",
+	"atk_speed": "攻撃間隔 +8%/Lv短縮", "draw_time": "描画フェーズ +0.6秒/Lv",
+}
 var zankou_lbl: Label = null
 var upgrade_layer: CanvasLayer = null
 
