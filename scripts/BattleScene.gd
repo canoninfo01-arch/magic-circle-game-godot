@@ -737,18 +737,18 @@ func _update_enemies(delta: float) -> void:
 			e["flash"] = maxf(0.0, flash_t - delta)
 			(e["node"] as Node2D).modulate = Color(2.2, 2.2, 2.2) if flash_t > 0.06 else Color.WHITE
 		# 敵同士のセパレーション（群れが重ならないように押し離す）
-		# 2026-08-04：分離が強すぎて敵がプレイヤー周りに均等に薄く広がり、密集が起きない問題を受けて弱めた。
-		# 水の貫通・土の範囲武器（回転盾・衝撃波）は敵が固まってこそ意味を持つため、多少の重なりを許容する
+		# 2026-08-04：分離が強すぎて敵がプレイヤー周りに均等に薄く広がり、密集が起きない問題を受けて弱めていたが、
+		# 2026-08-10：移動速度を減速したことで密集自体はそのまま起きる見込みのため、重なり対策を元の強さに戻した
 		var sep := Vector2.ZERO
 		for other in enemies:
 			if other == e: continue
 			var diff: Vector2 = (e["pos"] as Vector2) - (other["pos"] as Vector2)
-			var min_d: float  = ((e["radius"] as float) + (other["radius"] as float)) * 0.55
+			var min_d: float  = (e["radius"] as float) + (other["radius"] as float) + 4.0
 			var d: float      = diff.length()
 			if d < min_d and d > 0.5:
 				sep += diff.normalized() * (min_d - d)
 		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
-		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 1.1) * delta + (e["kb"] as Vector2) * delta
+		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
