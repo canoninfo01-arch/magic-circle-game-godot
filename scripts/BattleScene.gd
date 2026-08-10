@@ -12,7 +12,7 @@ const H := 844.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const PLAYER_SPEED     := 220.0
+const PLAYER_SPEED     := 190.0  # 2026-08-10：ゲームスピードが速すぎるとの指摘で220→190に減速
 const PLAYER_HP_MAX    := 10
 const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
@@ -57,7 +57,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 }
 
 const ENEMY_SPAWN_BASE: float = 1.3  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記）
-const ENEMY_SPEED_BASE: float = 38.0  # 2026-07-16：初期の速すぎる「追いかけっこ」感を抑えるため75→55→46→38にさらに減速
+const ENEMY_SPEED_BASE: float = 32.0  # 2026-08-10：ゲームスピードが速すぎるとの指摘で38→32にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
