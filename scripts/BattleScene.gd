@@ -12,7 +12,7 @@ const H := 844.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const PLAYER_SPEED     := 190.0  # 2026-08-10：ゲームスピードが速すぎるとの指摘で220→190に減速
+const PLAYER_SPEED     := 165.0  # 2026-08-10：まだ速いとの指摘で190→165にさらに減速
 const PLAYER_HP_MAX    := 10
 const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
@@ -57,7 +57,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 }
 
 const ENEMY_SPAWN_BASE: float = 1.3  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記）
-const ENEMY_SPEED_BASE: float = 32.0  # 2026-08-10：ゲームスピードが速すぎるとの指摘で38→32にさらに減速
+const ENEMY_SPEED_BASE: float = 27.0  # 2026-08-10：まだ速いとの指摘で32→27にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
@@ -682,8 +682,11 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	var pos: Vector2  = _random_edge_pos()
 	var etype: String = forced_type if forced_type != "" else _pick_enemy_type()
 	var edata: Dictionary = ENEMY_TYPES[etype]
-	var hp: int   = int((ENEMY_HP_BASE + elapsed_time * 0.8) * (edata["hp_m"] as float))
-	var spd: float = (ENEMY_SPEED_BASE + elapsed_time * 0.5) * (edata["spd_m"] as float)
+	# 2026-08-10：HP・速度の時間経過スケーリングを廃止（見た目が変わらないまま個体が強くなるのは
+	# プレイヤーに伝わらないとの指摘）。難易度上昇は既存の「数が増える」（スポーン間隔短縮・同時湧き数増加・
+	# ウェーブラッシュ）と「新しい敵タイプが混ざる」（_pick_enemy_typeの時間/ステージ依存の抽選）に一本化
+	var hp: int   = int(ENEMY_HP_BASE * (edata["hp_m"] as float))
+	var spd: float = ENEMY_SPEED_BASE * (edata["spd_m"] as float)
 	var r: float  = edata["radius"] as float
 
 	var node := Sprite2D.new()
