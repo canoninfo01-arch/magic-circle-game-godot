@@ -71,9 +71,11 @@ const ENEMY_TYPES := {
 	# 2026-08-04：colorを白銀ベースに変更（彩度は天敵ウォード専用に空けるため）。本体スプライトはENEMY_DESATURATE_SHADERで
 	# 彩度を落としており、この色は死亡パーティクル（_spawn_death_particles）にのみ使われる
 	# 2026-08-07：物量戦にする都合、雑魚役のシャード・フラクチャーのHPを下げて「群れは弱いが数で押す」を明確化
-	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.28, "spd_m": 1.6  },
-	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 1.4,  "spd_m": 0.85 },
-	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 5.5,  "spd_m": 0.4  },
+	# 2026-08-14：TTK計算で再調整（仲間5体の基礎攻撃だけで50〜70DPS相当と判明、フラクチャー以上が一瞬で溶けていた）。
+	# シャードは雑魚のまま、フラクチャー・ヴォイドマークは持久力を底上げして「群れの芯」「本当の強敵」の役割を明確化
+	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.4,  "spd_m": 1.6  },
+	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 2.2,  "spd_m": 0.85 },
+	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 8.0,  "spd_m": 0.4  },
 }
 
 # 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
@@ -88,6 +90,17 @@ const PREDATOR_WARD_COLOR := {
 const PREDATOR_DMG_CUT      := 0.6
 const PREDATOR_CHANCE       := 0.18  # ステージ2
 const PREDATOR_CHANCE_STAGE3 := 0.3  # ステージ3・エンドレスは種類・頻度を増やす
+
+# エリート個体（2026-08-14追加）：既存3種のどれにでも乗る強化バリエーション。新規ドット絵を発注せず、
+# 天敵ウォードと同じ「本体はそのまま・リングで異質さを表現」の手法を流用。HP・速度・サイズを底上げし、
+# 見た目も強さも違う個体として「新しい敵タイプが増えた」体験を安く実現する
+const ELITE_RING_COLOR  := Color(1.0, 0.2, 0.2)
+const ELITE_HP_MULT     := 2.5
+const ELITE_SPEED_MULT  := 1.15
+const ELITE_SCALE_MULT  := 1.3
+const ELITE_CHANCE      := 0.05  # ステージ1・2
+const ELITE_CHANCE_STAGE3 := 0.1  # ステージ3・エンドレスは頻度を増やす
+const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出さない
 
 # 特定ウェーブ番号は単一タイプ強制（2026-07-27追加）。「このウェーブは火が輝く」等の山場を作る狙い。
 # countは通常式（6+wave_count*2）を使わず個別指定（void_markは1体が重いので少数精鋭にする）
@@ -130,7 +143,7 @@ const HEAL_AMOUNT       := 2
 const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
 const WEAPON_ITEM_CHANCE := 0.025  # 2026-07-18：0.06→0.12 / 2026-08-07：0.12→0.08 / 2026-08-10：プレイヤーが強くなるペースが速すぎるとの指摘で0.08→0.05→「今の半分」で0.025
 const WEAPON_ITEM_COOLDOWN := 5.0  # 秒。回復と同じ理由でクールダウンを追加
-const ITEM_PICKUP_R    := 38.0
+const ITEM_PICKUP_R    := 60.0  # 2026-08-14：38だと拾いきれず画面にアイテムが積み上がって見た目がごちゃつくとの指摘で拡大
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 9.5  # 2026-08-04：最頻出アイテムなのに一番小さくて視認しづらいとの指摘で7.0→9.5に拡大
 
@@ -668,8 +681,10 @@ func _trigger_wave() -> void:
 
 func _pick_enemy_type() -> String:
 	var r := randf()
-	# 2026-08-04：ヴォイドマークはステージ2以降限定（ステージ1は「シャード中心→フラクチャー混入」に留める）
-	if current_stage >= 2 and elapsed_time >= 120.0:
+	# 2026-08-04：ヴォイドマークはステージ2以降限定にしていたが、2026-08-14：ステージ1（5分）が
+	# 一度も本当の強敵に当たらないまま終わってしまい「1回目で楽勝」の一因になっていたため、
+	# ステージ制限を撤廃。経過時間だけで判定し、ステージ1でも終盤（3分〜）に混ざるようにした
+	if elapsed_time >= 180.0:
 		if r < 0.25: return "void_mark"
 		if r < 0.60: return "fracture"
 		return "shard"
@@ -689,6 +704,15 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	var spd: float = ENEMY_SPEED_BASE * (edata["spd_m"] as float)
 	var r: float  = edata["radius"] as float
 
+	var is_elite := false
+	if elapsed_time >= ELITE_MIN_TIME:
+		var elite_chance: float = ELITE_CHANCE_STAGE3 if current_stage >= 3 else ELITE_CHANCE
+		is_elite = randf() < elite_chance
+	if is_elite:
+		hp = int(float(hp) * ELITE_HP_MULT)
+		spd *= ELITE_SPEED_MULT
+		r *= ELITE_SCALE_MULT
+
 	var node := Sprite2D.new()
 	node.texture = ENEMY_SPRITE_TEXTURES[etype]
 	var tex_size: Vector2 = node.texture.get_size()
@@ -699,6 +723,9 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 	node.material = _enemy_shader_mat
 	add_child(node)
 
+	if is_elite:
+		_attach_elite_ring(node, r)
+
 	var ward := ""
 	if current_stage >= 2:
 		var chance: float = PREDATOR_CHANCE_STAGE3 if current_stage >= 3 else PREDATOR_CHANCE
@@ -706,7 +733,19 @@ func _spawn_one_enemy(forced_type: String = "") -> void:
 			ward = PREDATOR_ATTRS[randi() % PREDATOR_ATTRS.size()]
 			_attach_predator_ring(node, r, ward)
 
-	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward })
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite })
+
+# エリート個体のリング表示（天敵ウォードと同じ発想だが、赤で統一して「強い個体」だと直感的にわかるようにする）
+func _attach_elite_ring(parent: Node2D, r: float) -> void:
+	var ring := Line2D.new()
+	ring.width = 2.6
+	ring.default_color = ELITE_RING_COLOR
+	for p in _make_ring_points(r * 1.35, 1.0):
+		ring.add_point(p)
+	parent.add_child(ring)
+	var tw := ring.create_tween()
+	tw.set_loops()
+	tw.tween_property(ring, "rotation", TAU, 2.2).from(0.0)
 
 # 天敵ウォードのリング表示（味方の_attach_sigil_ringと同じ発想。本体色は変えない）
 func _attach_predator_ring(parent: Node2D, r: float, ward: String) -> void:
@@ -1038,7 +1077,8 @@ func _start_rain_strike(pos: Vector2, dmg: int, radius: float, col: Color, attr:
 
 func _rain_impact(pos: Vector2, dmg: int, radius: float, col: Color, attr: String) -> void:
 	Sfx.play_evolve()
-	shake_power = maxf(shake_power, 8.0)
+	# 2026-08-14：敵が多いと着弾のたび画面が揺れて邪魔になるとの指摘で、揺れを大幅に弱めた（8.0→2.0）
+	shake_power = maxf(shake_power, 2.0)
 	for e in enemies:
 		var d := pos.distance_to(e["pos"] as Vector2)
 		if d < radius:
@@ -1216,7 +1256,10 @@ func _explode_at(pos: Vector2, dmg: int, radius: float, col: Color, exclude: Dic
 func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
-	_spawn_fragment(e["pos"] as Vector2)
+	# 2026-08-14：毎キル確定ドロップだと画面にアイテムが積み上がりごちゃつくとの指摘。
+	# VSも毎回ではなく敵の半分程度しか落とさないとの指摘を受け、50%抽選に変更
+	if randf() < 0.5:
+		_spawn_fragment(e["pos"] as Vector2)
 	# 2026-08-08：キャラアイテム（召喚）はランダム抽選をやめ、欠片を集めて閾値に達したときだけドロップする
 	# 確実なトリガーに変更（_update_itemsの欠片ピックアップ処理を参照）
 	# 2026-08-08：回復はHPが減るほど出やすい需要ベースの確率＋クールダウン。武器は既存%にクールダウンのみ追加。
@@ -1274,7 +1317,8 @@ func _update_particles(delta: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _spawn_fragment(pos: Vector2) -> void:
 	# 2026-08-04：水色だと水属性の仲間/弾と紛らわしく視認性が悪いとの指摘で、属性を持たない中立な銀白に変更
-	var node := _make_rune_pickup(Color(0.88, 0.86, 0.92), FRAGMENT_R, 4, 0.4, 3.0)
+	# 2026-08-14：最頻出アイテムが白すぎて目立ちすぎるとの指摘で、控えめなグレーに落とした（識別性は形状で担保）
+	var node := _make_rune_pickup(Color(0.55, 0.53, 0.6), FRAGMENT_R, 4, 0.4, 3.0)
 	node.position = pos
 	add_child(node)
 	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
