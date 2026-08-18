@@ -12,7 +12,7 @@ const H := 844.0
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const PLAYER_SPEED     := 165.0  # 2026-08-10：まだ速いとの指摘で190→165にさらに減速
+const PLAYER_SPEED     := 130.0  # 2026-08-10：まだ速いとの指摘で190→165にさらに減速 / 2026-08-18：敵との速度差がありすぎるとの指摘で165→130に
 const PLAYER_HP_MAX    := 10
 const PLAYER_R         := 11.0
 const MAX_ALLIES       := 10
@@ -56,7 +56,7 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 	"octagram":      0.92,
 }
 
-const ENEMY_SPAWN_BASE: float = 1.3  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記）
+const ENEMY_SPAWN_BASE: float = 1.6  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記） / 2026-08-18：湧きペースが速すぎるとの指摘で1.3→1.6に緩める
 const ENEMY_SPEED_BASE: float = 27.0  # 2026-08-10：まだ速いとの指摘で32→27にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
@@ -662,7 +662,7 @@ func _spawn_enemies(delta: float) -> void:
 	enemy_spawn_timer -= delta
 	if enemy_spawn_timer > 0.0: return
 	# 2026-08-07：物量戦化。間隔を短縮するだけでなく、時間経過で1回あたりの同時湧き数も増やす
-	var interval := maxf(0.35, ENEMY_SPAWN_BASE - elapsed_time * 0.02)
+	var interval := maxf(0.45, ENEMY_SPAWN_BASE - elapsed_time * 0.02)  # 2026-08-18：下限も0.35→0.45に緩めた
 	enemy_spawn_timer = interval
 	var spawn_count := 1 + mini(3, int(elapsed_time / 90.0))
 	for _i in range(spawn_count):
@@ -1271,7 +1271,9 @@ func _on_enemy_death(e: Dictionary) -> void:
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
 	# 2026-08-14：毎キル確定ドロップだと画面にアイテムが積み上がりごちゃつくとの指摘。
 	# VSも毎回ではなく敵の半分程度しか落とさないとの指摘を受け、50%抽選に変更
-	if randf() < 0.5:
+	# 2026-08-18：ただし最初の仲間が出る前に運悪く欠片が出ないと、1人きりのまま「事故る」との指摘。
+	# 最初の仲間が出るまでは確定ドロップにして、事故らないよう保証する
+	if allies.size() == 0 or randf() < 0.5:
 		_spawn_fragment(e["pos"] as Vector2)
 	# 2026-08-08：キャラアイテム（召喚）はランダム抽選をやめ、欠片を集めて閾値に達したときだけドロップする
 	# 確実なトリガーに変更（_update_itemsの欠片ピックアップ処理を参照）
