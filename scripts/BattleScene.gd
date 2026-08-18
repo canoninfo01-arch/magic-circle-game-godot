@@ -56,7 +56,6 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 	"octagram":      0.92,
 }
 
-const ENEMY_SPAWN_BASE: float = 1.6  # 2026-08-07：VS寄りの物量戦にするため2.5→1.3に短縮（詳細は下記MAX_ENEMIES注記） / 2026-08-18：湧きペースが速すぎるとの指摘で1.3→1.6に緩める
 const ENEMY_SPEED_BASE: float = 27.0  # 2026-08-10：まだ速いとの指摘で32→27にさらに減速
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
@@ -102,11 +101,83 @@ const ELITE_CHANCE      := 0.05  # ステージ1・2
 const ELITE_CHANCE_STAGE3 := 0.1  # ステージ3・エンドレスは頻度を増やす
 const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出さない
 
-# 特定ウェーブ番号は単一タイプ強制（2026-07-27追加）。「このウェーブは火が輝く」等の山場を作る狙い。
-# countは通常式（6+wave_count*2）を使わず個別指定（void_markは1体が重いので少数精鋭にする）
-const WAVE_FORCED_TYPE := {
-	3: { "type": "shard",     "count": 12 },
-	5: { "type": "void_mark", "count": 4  },
+# ステージ毎のスポーンタイムライン（2026-08-18：数式ベースの湧きペース＋ランダム敵種選択を全面的に作り直した）。
+# 「敵の湧きをどう制御してるか」という相談から、VSが採用する“ステージごとの譜面”方式に寄せた設計：
+#   segments：常時湧きの密度（interval=間隔・count=1回の同時湧き数）と敵構成比（mix）を時刻で切り替える。
+#             意図的に間隔を伸ばす「谷」を挟むことで、山場（wave）の前後に緊張と緩和を作る
+#   events  ：特定時刻に1回だけ発生する、プレイヤーを囲む包囲ウェーブ（_spawn_ring_enemies）。
+#             segmentsの密度が上がるタイミングと合わせて「ここが山場」という体感を強調する
+#   loop_event：全eventsを消化した後（主にステージ4＝エンドレス）、指定周期で包囲ウェーブを反復させる
+# mixの合計は1.0でなくてよい（ルーレット判定、外れた分はshard扱い）。ステージ4（エンドレス）はステージ3の
+# テーブルをそのまま流用し、900秒地点でloop_eventに切り替わる。これは初回の手書き案——実プレイでの
+# 体感調整が前提（山場が弱い/強い、谷が長い/短い等はいつでも数値だけで直せる）
+const STAGE_TIMELINES := {
+	1: {
+		"segments": [
+			{ "t": 0.0,   "interval": 1.6, "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 45.0,  "interval": 2.4, "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 60.0,  "interval": 1.1, "count": 1, "mix": { "shard": 0.75, "fracture": 0.25 } },
+			{ "t": 125.0, "interval": 2.2, "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
+			{ "t": 145.0, "interval": 0.9, "count": 2, "mix": { "shard": 0.55, "fracture": 0.45 } },
+			{ "t": 215.0, "interval": 2.0, "count": 1, "mix": { "shard": 0.5,  "fracture": 0.35, "void_mark": 0.15 } },
+			{ "t": 240.0, "interval": 0.6, "count": 2, "mix": { "shard": 0.4,  "fracture": 0.4,  "void_mark": 0.2 } },
+		],
+		"events": [
+			{ "t": 60.0,  "count": 10, "type": "shard" },
+			{ "t": 145.0, "count": 14, "type": "fracture" },
+			{ "t": 240.0, "count": 6,  "type": "void_mark" },
+		],
+	},
+	2: {
+		"segments": [
+			{ "t": 0.0,   "interval": 1.6,  "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 45.0,  "interval": 2.4,  "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 60.0,  "interval": 1.1,  "count": 1, "mix": { "shard": 0.75, "fracture": 0.25 } },
+			{ "t": 130.0, "interval": 2.2,  "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
+			{ "t": 150.0, "interval": 0.9,  "count": 2, "mix": { "shard": 0.55, "fracture": 0.45 } },
+			{ "t": 230.0, "interval": 2.0,  "count": 1, "mix": { "shard": 0.5,  "fracture": 0.35, "void_mark": 0.15 } },
+			{ "t": 250.0, "interval": 0.7,  "count": 2, "mix": { "shard": 0.4,  "fracture": 0.4,  "void_mark": 0.2 } },
+			{ "t": 350.0, "interval": 2.2,  "count": 1, "mix": { "shard": 0.35, "fracture": 0.4,  "void_mark": 0.25 } },
+			{ "t": 380.0, "interval": 0.6,  "count": 2, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
+			{ "t": 480.0, "interval": 1.8,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.35, "void_mark": 0.35 } },
+			{ "t": 520.0, "interval": 0.5,  "count": 3, "mix": { "shard": 0.25, "fracture": 0.35, "void_mark": 0.4 } },
+		],
+		"events": [
+			{ "t": 60.0,  "count": 10, "type": "shard" },
+			{ "t": 150.0, "count": 14, "type": "fracture" },
+			{ "t": 250.0, "count": 6,  "type": "void_mark" },
+			{ "t": 380.0, "count": 16, "type": "fracture" },
+			{ "t": 520.0, "count": 8,  "type": "void_mark" },
+		],
+	},
+	3: {
+		"segments": [
+			{ "t": 0.0,   "interval": 1.5,  "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 40.0,  "interval": 2.2,  "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 55.0,  "interval": 1.0,  "count": 2, "mix": { "shard": 0.7,  "fracture": 0.3 } },
+			{ "t": 120.0, "interval": 2.0,  "count": 1, "mix": { "shard": 0.6,  "fracture": 0.4 } },
+			{ "t": 140.0, "interval": 0.8,  "count": 2, "mix": { "shard": 0.5,  "fracture": 0.4,  "void_mark": 0.1 } },
+			{ "t": 220.0, "interval": 1.9,  "count": 1, "mix": { "shard": 0.45, "fracture": 0.35, "void_mark": 0.2 } },
+			{ "t": 250.0, "interval": 0.6,  "count": 2, "mix": { "shard": 0.35, "fracture": 0.4,  "void_mark": 0.25 } },
+			{ "t": 350.0, "interval": 2.0,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
+			{ "t": 380.0, "interval": 0.5,  "count": 3, "mix": { "shard": 0.25, "fracture": 0.35, "void_mark": 0.4 } },
+			{ "t": 500.0, "interval": 1.8,  "count": 1, "mix": { "shard": 0.2,  "fracture": 0.35, "void_mark": 0.45 } },
+			{ "t": 530.0, "interval": 0.45, "count": 3, "mix": { "shard": 0.2,  "fracture": 0.3,  "void_mark": 0.5 } },
+			{ "t": 650.0, "interval": 1.7,  "count": 1, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
+			{ "t": 680.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
+			{ "t": 800.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.1,  "fracture": 0.3,  "void_mark": 0.6 } },
+		],
+		"events": [
+			{ "t": 55.0,  "count": 12, "type": "shard" },
+			{ "t": 140.0, "count": 16, "type": "fracture" },
+			{ "t": 250.0, "count": 8,  "type": "void_mark" },
+			{ "t": 380.0, "count": 18, "type": "fracture" },
+			{ "t": 530.0, "count": 10, "type": "void_mark" },
+			{ "t": 680.0, "count": 20, "type": "fracture" },
+		],
+		# エンドレス（ステージ4）は900秒（このテーブル終端）を過ぎたら以降ここに切り替わる
+		"loop_event": { "period": 100.0, "count": 10, "types": ["fracture", "void_mark"] },
+	},
 }
 
 # 敵ドット絵（VS基準：小さく・簡素・大量湧きでも視認性重視）
@@ -270,8 +341,11 @@ var weapon_levels := {
 # enemy: { hp, max_hp, pos, node:Polygon2D, kb:Vector2 }
 var enemies          : Array[Dictionary] = []
 var enemy_spawn_timer := 0.0
-var next_wave_time    := 60.0
 var wave_count        := 0
+# 2026-08-18：タイムライン方式に作り直したことに伴う進行管理。events配列の何番目まで消化したか、
+# 消化しきった後（主にエンドレス）はloop_eventを何秒おきに発生させるか
+var next_event_idx      := 0
+var next_loop_event_time := -1.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 弾
@@ -652,34 +726,60 @@ func _player_shoot() -> void:
 # 敵
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _spawn_enemies(delta: float) -> void:
-	# ウェーブラッシュ（60秒ごと）
-	if elapsed_time >= next_wave_time:
-		next_wave_time += 60.0
-		wave_count += 1
-		_trigger_wave()
+	var timeline := _current_timeline()
 
-	# 通常スポーン
+	# ウェーブ（events）：時刻を迎えたら1回だけ包囲ウェーブを発生させる。全部消化したらloop_eventに切り替える
+	var events: Array = timeline.get("events", []) as Array
+	if next_event_idx < events.size():
+		var ev: Dictionary = events[next_event_idx] as Dictionary
+		if elapsed_time >= (ev["t"] as float):
+			wave_count += 1
+			_spawn_ring_enemies(ev["count"] as int, ev["type"] as String)
+			_show_wave_flash(wave_count)
+			next_event_idx += 1
+	else:
+		var loop_event: Dictionary = timeline.get("loop_event", {}) as Dictionary
+		if not loop_event.is_empty() and elapsed_time >= next_loop_event_time:
+			var types: Array = loop_event.get("types", ["shard"]) as Array
+			var etype: String = types[randi() % types.size()] as String
+			wave_count += 1
+			_spawn_ring_enemies(loop_event.get("count", 8) as int, etype)
+			_show_wave_flash(wave_count)
+			next_loop_event_time = elapsed_time + (loop_event.get("period", 90.0) as float)
+
+	# 通常スポーン（segments）：区間ごとの密度・敵構成に従う
 	enemy_spawn_timer -= delta
 	if enemy_spawn_timer > 0.0: return
-	# 2026-08-07：物量戦化。間隔を短縮するだけでなく、時間経過で1回あたりの同時湧き数も増やす
-	var interval := maxf(0.45, ENEMY_SPAWN_BASE - elapsed_time * 0.02)  # 2026-08-18：下限も0.35→0.45に緩めた
-	enemy_spawn_timer = interval
-	var spawn_count := 1 + mini(3, int(elapsed_time / 90.0))
-	for _i in range(spawn_count):
+	var seg := _current_segment(timeline.get("segments", []) as Array)
+	enemy_spawn_timer = seg.get("interval", 1.5) as float
+	var count: int = seg.get("count", 1) as int
+	var mix: Dictionary = seg.get("mix", { "shard": 1.0 }) as Dictionary
+	for _i in range(count):
 		if enemies.size() >= MAX_ENEMIES: break
-		_spawn_one_enemy()
+		_spawn_one_enemy(_pick_type_from_mix(mix))
 
-func _trigger_wave() -> void:
-	# 2026-08-04：単一属性の強制ウェーブは⑧の設計に合わせてステージ3・エンドレス限定にした
-	# 2026-08-18：通常スポーンと同じ「画面端からランダム」だと、逃げながら撃ってる間は結局
-	# 円を描いて回避し続けるだけになり「囲まれる」緊張感が生まれないとの指摘。ウェーブだけは
-	# プレイヤーを中心にした円状配置にして、VSの「弱い雑魚で囲む」瞬間を意図的に作る。
-	# 種類も既定は雑魚のシャードに固定し、通常スポーンの「新タイプが混ざる」escalationとは別枠にする
-	var forced_data: Dictionary = (WAVE_FORCED_TYPE.get(wave_count, {}) as Dictionary) if current_stage >= 3 else {}
-	var forced: String = forced_data.get("type", "shard") as String
-	var count: int = forced_data.get("count", 6 + wave_count * 2) as int
-	_spawn_ring_enemies(count, forced)
-	_show_wave_flash(wave_count)
+# ステージ4（エンドレス）はステージ3のタイムラインをそのまま流用する（900秒経過後はloop_eventに切り替わる）
+func _current_timeline() -> Dictionary:
+	var key := mini(current_stage, 3)
+	return STAGE_TIMELINES.get(key, STAGE_TIMELINES[3]) as Dictionary
+
+# 時刻tが経過時間以下の区間のうち、一番手前（最新）のものを採用する。segmentsは時刻昇順の前提
+func _current_segment(segments: Array) -> Dictionary:
+	var chosen: Dictionary = segments[0] as Dictionary
+	for seg in segments:
+		if elapsed_time >= ((seg as Dictionary)["t"] as float):
+			chosen = seg as Dictionary
+		else:
+			break
+	return chosen
+
+func _pick_type_from_mix(mix: Dictionary) -> String:
+	var r := randf()
+	var acc := 0.0
+	for k in mix:
+		acc += float(mix[k])
+		if r < acc: return k as String
+	return "shard"
 
 # ウェーブ専用：プレイヤーを中心に画面外径で均等配置し、四方から一斉に迫る「包囲」を作る
 func _spawn_ring_enemies(count: int, forced_type: String) -> void:
@@ -692,27 +792,15 @@ func _spawn_ring_enemies(count: int, forced_type: String) -> void:
 		var pos := player_pos + Vector2(cos(a), sin(a)) * radius
 		_spawn_one_enemy(forced_type, pos)
 
-func _pick_enemy_type() -> String:
-	var r := randf()
-	# 2026-08-04：ヴォイドマークはステージ2以降限定にしていたが、2026-08-14：ステージ1（5分）が
-	# 一度も本当の強敵に当たらないまま終わってしまい「1回目で楽勝」の一因になっていたため、
-	# ステージ制限を撤廃。経過時間だけで判定し、ステージ1でも終盤（3分〜）に混ざるようにした
-	if elapsed_time >= 180.0:
-		if r < 0.25: return "void_mark"
-		if r < 0.60: return "fracture"
-		return "shard"
-	elif elapsed_time >= 60.0:
-		if r < 0.40: return "fracture"
-		return "shard"
-	return "shard"
-
 func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 	var pos: Vector2  = forced_pos if forced_pos != null else _random_edge_pos()
-	var etype: String = forced_type if forced_type != "" else _pick_enemy_type()
+	# 2026-08-18：敵種の抽選はSTAGE_TIMELINESの区間ごとのmixに一本化したため、呼び出し元は
+	# 常に解決済みの型を渡す想定。空文字が来た場合のみ雑魚のシャードにフォールバックする
+	var etype: String = forced_type if forced_type != "" else "shard"
 	var edata: Dictionary = ENEMY_TYPES[etype]
 	# 2026-08-10：HP・速度の時間経過スケーリングを廃止（見た目が変わらないまま個体が強くなるのは
-	# プレイヤーに伝わらないとの指摘）。難易度上昇は既存の「数が増える」（スポーン間隔短縮・同時湧き数増加・
-	# ウェーブラッシュ）と「新しい敵タイプが混ざる」（_pick_enemy_typeの時間/ステージ依存の抽選）に一本化
+	# プレイヤーに伝わらないとの指摘）。難易度上昇は「数が増える」「新しい敵タイプが混ざる」に一本化
+	# （2026-08-18：どちらもSTAGE_TIMELINESの区間・イベントで制御するタイムライン方式に作り直した）
 	var hp: int   = int(ENEMY_HP_BASE * (edata["hp_m"] as float))
 	var spd: float = ENEMY_SPEED_BASE * (edata["spd_m"] as float)
 	var r: float  = edata["radius"] as float
