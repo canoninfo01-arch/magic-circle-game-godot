@@ -145,7 +145,7 @@ const WEAPON_ITEM_CHANCE := 0.025  # 2026-07-18：0.06→0.12 / 2026-08-07：0.1
 const WEAPON_ITEM_COOLDOWN := 5.0  # 秒。回復と同じ理由でクールダウンを追加
 const ITEM_PICKUP_R    := 60.0  # 2026-08-14：38だと拾いきれず画面にアイテムが積み上がって見た目がごちゃつくとの指摘で拡大
 const ITEM_R           := 14.0
-const FRAGMENT_R       := 9.5  # 2026-08-04：最頻出アイテムなのに一番小さくて視認しづらいとの指摘で7.0→9.5に拡大
+const FRAGMENT_R       := 7.0  # 2026-08-04：視認しづらいとの指摘で7.0→9.5に拡大 / 2026-08-18：目立ちすぎの原因は明るさでなくサイズだったと判明し7.0に戻す
 
 const BULLET_SPEED     := 370.0
 const BULLET_RANGE     := 280.0
@@ -158,7 +158,7 @@ const ATTACK_INTERVAL       := 0.7
 const PLAYER_ATTACK_INTERVAL := 1.2
 const PLAYER_BULLET_DMG      := 4
 
-const DRAW_DURATION    := 6.5  # 2026-07-27：8.0から短縮（延長は残光の恒久強化「描画時間強化」で対応、2026-08-08）
+const DRAW_DURATION    := 5.0  # 2026-07-27：8.0から短縮 / 2026-08-18：最初はもっと短くていいとの指摘で6.5→5.0に再短縮（延長は残光の恒久強化「描画時間強化」で対応、2026-08-08）
 const DRAW_GUIDE_R     := 120.0
 const DRAW_COVER_THR   := 0.70
 const DRAW_BRUSH_R     := 18.0  # 2026-07-27：ブラシ半径は紋章サイズに関わらず絶対px固定（tierが上がっても許容範囲を広げない）
@@ -671,13 +671,26 @@ func _spawn_enemies(delta: float) -> void:
 
 func _trigger_wave() -> void:
 	# 2026-08-04：単一属性の強制ウェーブは⑧の設計に合わせてステージ3・エンドレス限定にした
+	# 2026-08-18：通常スポーンと同じ「画面端からランダム」だと、逃げながら撃ってる間は結局
+	# 円を描いて回避し続けるだけになり「囲まれる」緊張感が生まれないとの指摘。ウェーブだけは
+	# プレイヤーを中心にした円状配置にして、VSの「弱い雑魚で囲む」瞬間を意図的に作る。
+	# 種類も既定は雑魚のシャードに固定し、通常スポーンの「新タイプが混ざる」escalationとは別枠にする
 	var forced_data: Dictionary = (WAVE_FORCED_TYPE.get(wave_count, {}) as Dictionary) if current_stage >= 3 else {}
-	var forced: String = forced_data.get("type", "") as String
+	var forced: String = forced_data.get("type", "shard") as String
 	var count: int = forced_data.get("count", 6 + wave_count * 2) as int
-	for _i in range(count):
-		if enemies.size() >= MAX_ENEMIES: break
-		_spawn_one_enemy(forced)
+	_spawn_ring_enemies(count, forced)
 	_show_wave_flash(wave_count)
+
+# ウェーブ専用：プレイヤーを中心に画面外径で均等配置し、四方から一斉に迫る「包囲」を作る
+func _spawn_ring_enemies(count: int, forced_type: String) -> void:
+	if count <= 0: return
+	var radius := maxf(W, H) * 0.5 + 80.0
+	var start_a := randf() * TAU
+	for i in range(count):
+		if enemies.size() >= MAX_ENEMIES: break
+		var a := start_a + (float(i) / float(count)) * TAU + randf_range(-0.12, 0.12)
+		var pos := player_pos + Vector2(cos(a), sin(a)) * radius
+		_spawn_one_enemy(forced_type, pos)
 
 func _pick_enemy_type() -> String:
 	var r := randf()
@@ -693,8 +706,8 @@ func _pick_enemy_type() -> String:
 		return "shard"
 	return "shard"
 
-func _spawn_one_enemy(forced_type: String = "") -> void:
-	var pos: Vector2  = _random_edge_pos()
+func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
+	var pos: Vector2  = forced_pos if forced_pos != null else _random_edge_pos()
 	var etype: String = forced_type if forced_type != "" else _pick_enemy_type()
 	var edata: Dictionary = ENEMY_TYPES[etype]
 	# 2026-08-10：HP・速度の時間経過スケーリングを廃止（見た目が変わらないまま個体が強くなるのは
@@ -2483,6 +2496,32 @@ func _draw() -> void:
 	for j in range(-1, int(H / grid) + 2):
 		var y := tl.y - oy + j * grid
 		draw_line(Vector2(tl.x - pad, y), Vector2(tl.x + W + pad, y), line_col, 1.0)
+
+	# 瓦礫（2026-08-18追加）：「景色がなく移動の基準がわからない」との指摘で追加。壊れた紋章の世界という
+	# 世界観に沿って、割れた石版の破片をワールド座標に固定して地面に散らす。星と同じハッシュ方式でコードのみ
+	# 完結させ新規絵の発注はしない。前景（弾・アイテム・敵）を邪魔しないよう低彩度・低コントラストに抑える
+	var debris_cell := 170.0
+	var d_ox := fmod(tl.x - pad, debris_cell)
+	var d_oy := fmod(tl.y - pad, debris_cell)
+	for i in range(-1, int((W + pad * 2) / debris_cell) + 2):
+		for j in range(-1, int((H + pad * 2) / debris_cell) + 2):
+			var wx := tl.x - pad - d_ox + i * debris_cell
+			var wy := tl.y - pad - d_oy + j * debris_cell
+			var cx := int(round(wx / debris_cell))
+			var cy := int(round(wy / debris_cell))
+			var h := _hash01(cx * 7 + 3, cy * 13 + 5)
+			if h >= 0.3: continue
+			var h2 := _hash01(cx + 101, cy + 202)
+			var center := Vector2(wx, wy) + Vector2((h - 0.15) * debris_cell * 0.6, (h2 - 0.15) * debris_cell * 0.6)
+			var size := 12.0 + h2 * 16.0
+			var rot := h * TAU
+			var pts := PackedVector2Array()
+			var vcount := 4 + int(h2 * 3.0)
+			for k in range(vcount):
+				var a := rot + (float(k) / float(vcount)) * TAU
+				var jitter := 0.55 + _hash01(cx + k * 17, cy + k * 31) * 0.55
+				pts.append(center + Vector2(cos(a), sin(a)) * size * jitter)
+			draw_colored_polygon(pts, Color(0.16, 0.15, 0.24, 0.4 + h2 * 0.15))
 
 	# 足元の「世界最後の陣」（2026-07-17再改訂：色を主張しない中立トーンに落とし、
 	# HPに連動して欠けていく仕様に変更。「なぜここに陣があるのか」に意味を持たせた）
