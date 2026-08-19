@@ -93,10 +93,12 @@ const PREDATOR_CHANCE_STAGE3 := 0.3  # ステージ3・エンドレスは種類�
 # エリート個体（2026-08-14追加）：既存3種のどれにでも乗る強化バリエーション。新規ドット絵を発注せず、
 # 天敵ウォードと同じ「本体はそのまま・リングで異質さを表現」の手法を流用。HP・速度・サイズを底上げし、
 # 見た目も強さも違う個体として「新しい敵タイプが増えた」体験を安く実現する
-const ELITE_RING_COLOR  := Color(1.0, 0.2, 0.2)
-const ELITE_HP_MULT     := 2.5
-const ELITE_SPEED_MULT  := 1.15
-const ELITE_SCALE_MULT  := 1.3
+# 2026-08-18：均一強化だけだと「速い個体がいない」との指摘。tough（硬い）とswift（速い）の2系統に分け、
+# リング色も分けて見分けられるようにした（赤=硬い・黄=速い）。今後増やすならこの辞書に追加するだけでいい
+const ELITE_VARIANTS := {
+	"tough": { "hp_mult": 2.5, "speed_mult": 1.15, "scale_mult": 1.3,  "ring_color": Color(1.0, 0.2, 0.2) },
+	"swift": { "hp_mult": 1.3, "speed_mult": 2.0,  "scale_mult": 1.05, "ring_color": Color(1.0, 0.9, 0.2) },
+}
 const ELITE_CHANCE      := 0.05  # ステージ1・2
 const ELITE_CHANCE_STAGE3 := 0.1  # ステージ3・エンドレスは頻度を増やす
 const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出さない
@@ -268,7 +270,7 @@ const ATTR_WEAPON_DATA := {
 	# 天から降り注ぐ範囲攻撃「紋章の雨」に置き換えた。密集地点を狙って落ちるので、敵の集まり対策とも噛み合う
 	"water_rain":   { "attr": "circle",   "name": "紋章の雨",       "pattern": "rain",       "cooldown": 2.2, "dmg": 7,  "col": Color(0.55, 0.85, 1.0), "radius": 46.0, "telegraph": 0.5 },
 	"water_pierce": { "attr": "circle",   "name": "貫通の矢",       "pattern": "projectile", "cooldown": 1.0, "dmg": 5,  "col": Color(0.7,  0.95, 1.0), "pierce": true },
-	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 55.0 },
+	"fire_explode": { "attr": "triangle", "name": "爆裂の紋章弾",   "pattern": "projectile", "cooldown": 1.6, "dmg": 8,  "col": Color(1.0,  0.5,  0.2),  "explode_r": 85.0 },  # 2026-08-18：効果が分かりづらいとの指摘で55→85に拡大
 	"fire_chain":   { "attr": "triangle", "name": "稲妻の鎖",       "pattern": "chain",      "cooldown": 1.8, "dmg": 6,  "col": Color(1.0,  0.9,  0.3),  "jumps": 3, "range": 160.0 },
 	# 2026-08-07：回転する紋章の盾は判定が軌道上の薄い輪っかだけ＋自身のノックバックで敵を弾き飛ばしてしまい、
 	# 同じ土属性の衝撃波（こちらもノックバック持ち）と弾き合って当たりにくいとの指摘で「固めるビーム」に作り替えた。
@@ -383,6 +385,8 @@ var guide_line      : Line2D      = null
 var guide_glow      : Line2D      = null
 var guide_line_inner: Line2D      = null  # tier2/3の内側輪郭（点/星）用。tier1では非表示
 var guide_glow_inner: Line2D      = null
+var guide_line_2    : Line2D      = null  # 3つ目の輪郭用（2026-08-19：火/土に円を追加した際、tier3が
+var guide_glow_2    : Line2D      = null  # 円+2輪郭の計3輪郭になったため新設。3輪郭未満の紋章では非表示
 var guide_base_color := Color.WHITE
 var guide_rune_root : Node2D = null  # 「これは紋章だ」感を出すための、円周上を回るルーン飾り
 var guide_rune_marks: Array[Polygon2D] = []
@@ -602,6 +606,19 @@ func _build_draw_layer() -> void:
 	guide_line_inner.visible = false
 	draw_layer.add_child(guide_line_inner)
 
+	# 3つ目の輪郭用（2026-08-19：火/土のtier3に円を追加したことで3輪郭になったため新設）
+	guide_glow_2 = Line2D.new()
+	guide_glow_2.width = 22.0
+	guide_glow_2.default_color = Color(1.0, 1.0, 1.0, 0.15)
+	guide_glow_2.visible = false
+	draw_layer.add_child(guide_glow_2)
+
+	guide_line_2 = Line2D.new()
+	guide_line_2.width = 6.0
+	guide_line_2.default_color = Color(1.0, 1.0, 1.0, 0.65)
+	guide_line_2.visible = false
+	draw_layer.add_child(guide_line_2)
+
 	trace_line = Line2D.new()
 	trace_line.width = 5.0
 	trace_line.default_color = Color.WHITE  # modulate で色を制御するので白ベース
@@ -806,13 +823,17 @@ func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 	var r: float  = edata["radius"] as float
 
 	var is_elite := false
+	var elite_variant := ""
 	if elapsed_time >= ELITE_MIN_TIME:
 		var elite_chance: float = ELITE_CHANCE_STAGE3 if current_stage >= 3 else ELITE_CHANCE
 		is_elite = randf() < elite_chance
 	if is_elite:
-		hp = int(float(hp) * ELITE_HP_MULT)
-		spd *= ELITE_SPEED_MULT
-		r *= ELITE_SCALE_MULT
+		var variant_keys := ELITE_VARIANTS.keys()
+		elite_variant = variant_keys[randi() % variant_keys.size()] as String
+		var v: Dictionary = ELITE_VARIANTS[elite_variant] as Dictionary
+		hp = int(float(hp) * (v["hp_mult"] as float))
+		spd *= v["speed_mult"] as float
+		r *= v["scale_mult"] as float
 
 	var node := Sprite2D.new()
 	node.texture = ENEMY_SPRITE_TEXTURES[etype]
@@ -825,7 +846,7 @@ func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 	add_child(node)
 
 	if is_elite:
-		_attach_elite_ring(node, r)
+		_attach_elite_ring(node, r, (ELITE_VARIANTS[elite_variant] as Dictionary)["ring_color"] as Color)
 
 	var ward := ""
 	if current_stage >= 2:
@@ -836,11 +857,11 @@ func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 
 	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite })
 
-# エリート個体のリング表示（天敵ウォードと同じ発想だが、赤で統一して「強い個体」だと直感的にわかるようにする）
-func _attach_elite_ring(parent: Node2D, r: float) -> void:
+# エリート個体のリング表示（天敵ウォードと同じ発想。色でtough/swiftの系統が直感的にわかるようにする）
+func _attach_elite_ring(parent: Node2D, r: float, ring_color: Color) -> void:
 	var ring := Line2D.new()
 	ring.width = 2.6
-	ring.default_color = ELITE_RING_COLOR
+	ring.default_color = ring_color
 	for p in _make_ring_points(r * 1.35, 1.0):
 		ring.add_point(p)
 	parent.add_child(ring)
@@ -1206,7 +1227,10 @@ func _position_ring(ring: Array[Dictionary], radius: float, delta: float, angle_
 	for i in range(ring.size()):
 		var angle: float = float(i) / float(ring.size()) * TAU + angle_offset
 		var target := player_pos + Vector2(cos(angle), sin(angle)) * radius
-		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * 165.0  # 2026-07-16：追従速度を300→230→195→165にさらに減速
+		# 2026-07-16：追従速度を300→230→195→165にさらに減速（当時はPLAYER_SPEEDと同じ165だったため固定値のままにしていた）
+		# 2026-08-18：PLAYER_SPEEDを130まで下げた際にこの165.0だけ取り残され、仲間ごとの速度差が
+		# 主人公に対して相対的に薄れてしまっていた。PLAYER_SPEED基準（speed_m＝主人公比の倍率）に変更
+		var spd: float = (SHAPE_DATA[ring[i]["shape"] as String]["speed_m"] as float) * PLAYER_SPEED
 		var cur_pos: Vector2 = ring[i]["node"].position
 		var dist: float      = cur_pos.distance_to(target)
 		var t: float         = minf(1.0, delta * spd / dist) if dist > 1.0 else 1.0
@@ -1788,6 +1812,18 @@ func _refresh_draw_guide() -> void:
 		guide_line_inner.visible = false
 		guide_glow_inner.visible = false
 
+	if contours.size() > 2:
+		guide_line_2.clear_points()
+		guide_glow_2.clear_points()
+		for p in contours[2]:
+			guide_line_2.add_point(p)
+			guide_glow_2.add_point(p)
+		guide_line_2.visible = true
+		guide_glow_2.visible = true
+	else:
+		guide_line_2.visible = false
+		guide_glow_2.visible = false
+
 	var shape_colors := {
 		"circle":   Color(0.5, 0.7, 1.0, 0.8),
 		"triangle": Color(1.0, 0.5, 0.5, 0.8),
@@ -1814,6 +1850,11 @@ func _apply_guide_intensity() -> void:
 		guide_line_inner.width = guide_line.width
 		guide_glow_inner.default_color = guide_glow.default_color
 		guide_glow_inner.width = guide_glow.width
+	if guide_line_2.visible:
+		guide_line_2.default_color = guide_line.default_color
+		guide_line_2.width = guide_line.width
+		guide_glow_2.default_color = guide_glow.default_color
+		guide_glow_2.width = guide_glow.width
 
 	var rune_col := guide_base_color.lerp(Color.WHITE, boost)
 	var rune_scale := 1.0 + boost * 0.6
@@ -2076,15 +2117,17 @@ func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	if power < 10: return
 	var arc_frac := 0.0
 	var ring_col := Color.WHITE
+	# 2026-08-18：「うまく描けたときの強さが見えづらい」との指摘で、線を太くしてティア間の色差も広げた
+	# （中位は白灰色止まりだと弱ティアと見分けづらかったため、水色寄りの色を割り当てて識別性を上げた）
 	if power >= 70:
-		arc_frac = 1.0;  ring_col = Color(1.0, 0.95, 0.6, 0.95)
+		arc_frac = 1.0;  ring_col = Color(1.0, 0.85, 0.3, 1.0)
 	elif power >= 30:
-		arc_frac = 0.85; ring_col = Color(0.85, 0.85, 0.8, 0.7)
+		arc_frac = 0.85; ring_col = Color(0.75, 0.9, 1.0, 0.9)
 	else:
-		arc_frac = 0.55; ring_col = Color(0.7, 0.7, 0.68, 0.4)
+		arc_frac = 0.55; ring_col = Color(0.65, 0.65, 0.7, 0.6)
 
 	var ring := Line2D.new()
-	ring.width = 1.6
+	ring.width = 3.0
 	ring.default_color = ring_col
 	for p in _make_ring_points(sz * 1.7, arc_frac):
 		ring.add_point(p)
@@ -2248,7 +2291,9 @@ func _show_wave_flash(wave: int) -> void:
 	var lbl := _make_label("WAVE  %d" % wave, 48, Vector2(W * 0.5 - 80, H * 0.38))
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.2))
 	if jp_font: lbl.add_theme_font_override("font", jp_font)
-	add_child(lbl)
+	# 2026-08-18：ワールド座標のself直下に追加していたため、カメラが原点から離れるほど画面からズレて
+	# 見えなくなるバグだった。他のHUDテキストと同じくCanvasLayer（ui_layer）に付けて画面固定にする
+	ui_layer.add_child(lbl)
 	var tween := create_tween()
 	tween.tween_property(lbl, "modulate:a", 0.0, 1.5)
 	tween.tween_callback(lbl.queue_free)

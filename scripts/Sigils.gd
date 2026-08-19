@@ -38,15 +38,25 @@ const SIGIL_DATA := {
 	},
 	"triangle_1": {
 		"attribute": "triangle", "tier": 1, "guide_scale": 1.0,
-		"contours": [{"shape": "triangle", "radius_ratio": 1.0, "weight": 1.0}],
+		# 2026-08-19：水（circle系）だけ実線の円が引かれ、火・土は多角形の輪郭線のみで円の位置は
+		# 回転するルーン飾りでしか示せていなかった。「ちゃんと丸の中に入ってる？」という確認を受け、
+		# 火・土の全tierにも明示的な円の輪郭を追加した（円は判定の重みを軽め＝0.3に設定）
+		"contours": [
+			{"shape": "circle",   "radius_ratio": 1.0, "weight": 0.3},
+			{"shape": "triangle", "radius_ratio": 1.0, "weight": 0.7},
+		],
 		"spawn_shape": "triangle",
 		"lap_gain": {"perfect": 35, "great": 20, "good": 10},
 	},
 	"triangle_2": {
 		"attribute": "triangle", "tier": 2, "guide_scale": 1.15,
+		# 2026-08-18：中心のdotが「思ってたのと違う」との指摘で廃止。tier3（triangle+triangle_inv＝六芒星）と
+		# 揃うよう、tier2はtier3のもう半分にあたるtriangle_inv単体にした。tier1→tier2→tier3で輪郭が
+		# 1つずつ増えてtier3で合体する、という筋の通った進行にする（squareも同じ考え方で揃えた）
+		# 2026-08-19：円の輪郭を追加（triangle_1と同じ理由）
 		"contours": [
-			{"shape": "triangle", "radius_ratio": 1.0, "weight": 0.6},
-			{"shape": "dot", "radius_ratio": 0.42, "weight": 0.4},
+			{"shape": "circle",       "radius_ratio": 1.0, "weight": 0.3},
+			{"shape": "triangle_inv", "radius_ratio": 1.0, "weight": 0.7},
 		],
 		"spawn_shape": "triangle_mid",
 		"lap_gain": {"perfect": 50, "great": 30, "good": 15},
@@ -55,24 +65,33 @@ const SIGIL_DATA := {
 		"attribute": "triangle", "tier": 3, "guide_scale": 1.3,
 		# 2026-08-07：単体の星形アウトライン（star6）は内側の角が鋭角すぎ、中に交差する線も無かったため、
 		# 本物の六芒星の構造（正三角形×2、上向き＋下向き）に作り替え。実際に線が交差する見た目になる
+		# 2026-08-19：円の輪郭を追加（3輪郭目。描画ガイドを3輪郭まで対応させるパイプライン拡張が必要だった）
 		"contours": [
-			{"shape": "triangle",     "radius_ratio": 1.0, "weight": 0.5},
-			{"shape": "triangle_inv", "radius_ratio": 1.0, "weight": 0.5},
+			{"shape": "circle",       "radius_ratio": 1.0, "weight": 0.2},
+			{"shape": "triangle",     "radius_ratio": 1.0, "weight": 0.4},
+			{"shape": "triangle_inv", "radius_ratio": 1.0, "weight": 0.4},
 		],
 		"spawn_shape": "hexagram",
 		"lap_gain": {"perfect": 70, "great": 40, "good": 20},
 	},
 	"square_1": {
 		"attribute": "square", "tier": 1, "guide_scale": 1.0,
-		"contours": [{"shape": "square", "radius_ratio": 1.0, "weight": 1.0}],
+		# 2026-08-19：円の輪郭を追加（triangle_1と同じ理由）
+		"contours": [
+			{"shape": "circle", "radius_ratio": 1.0, "weight": 0.3},
+			{"shape": "square", "radius_ratio": 1.0, "weight": 0.7},
+		],
 		"spawn_shape": "square",
 		"lap_gain": {"perfect": 35, "great": 20, "good": 10},
 	},
 	"square_2": {
 		"attribute": "square", "tier": 2, "guide_scale": 1.15,
+		# 2026-08-18：中心のdotが「思ってたのと違う」との指摘で廃止。tier3（square+square_45＝八芒星）と
+		# 揃うよう、tier2はtier3のもう半分にあたるsquare_45（菱形）単体にした。triangle_2と同じ考え方
+		# 2026-08-19：円の輪郭を追加（triangle_1と同じ理由）
 		"contours": [
-			{"shape": "square", "radius_ratio": 1.0, "weight": 0.6},
-			{"shape": "dot", "radius_ratio": 0.42, "weight": 0.4},
+			{"shape": "circle",    "radius_ratio": 1.0, "weight": 0.3},
+			{"shape": "square_45", "radius_ratio": 1.0, "weight": 0.7},
 		],
 		"spawn_shape": "square_mid",
 		"lap_gain": {"perfect": 50, "great": 30, "good": 15},
@@ -81,9 +100,11 @@ const SIGIL_DATA := {
 		"attribute": "square", "tier": 3, "guide_scale": 1.3,
 		# 2026-08-07：単体の星形アウトライン（star8）から、正方形×2（通常＋45度回転）の構造に作り替え。
 		# 六芒星と同じ理由（内角が鋭角すぎる・交差する線が無い）への対処
+		# 2026-08-19：円の輪郭を追加（3輪郭目。triangle_3と同じ理由）
 		"contours": [
-			{"shape": "square",    "radius_ratio": 1.0, "weight": 0.5},
-			{"shape": "square_45", "radius_ratio": 1.0, "weight": 0.5},
+			{"shape": "circle",    "radius_ratio": 1.0, "weight": 0.2},
+			{"shape": "square",    "radius_ratio": 1.0, "weight": 0.4},
+			{"shape": "square_45", "radius_ratio": 1.0, "weight": 0.4},
 		],
 		"spawn_shape": "octagram",
 		"lap_gain": {"perfect": 70, "great": 40, "good": 20},
