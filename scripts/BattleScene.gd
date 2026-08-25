@@ -99,7 +99,7 @@ const ELITE_VARIANTS := {
 	"tough": { "hp_mult": 2.5, "speed_mult": 1.15, "scale_mult": 1.3,  "ring_color": Color(1.0, 0.2, 0.2) },
 	"swift": { "hp_mult": 1.3, "speed_mult": 2.0,  "scale_mult": 1.05, "ring_color": Color(1.0, 0.9, 0.2) },
 }
-const ELITE_CHANCE      := 0.05  # ステージ1・2
+const ELITE_CHANCE      := 0.08  # ステージ1・2（2026-08-25：120秒プレイして変種が少なすぎるとの指摘で0.05→0.08）
 const ELITE_CHANCE_STAGE3 := 0.1  # ステージ3・エンドレスは頻度を増やす
 const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出さない
 
@@ -114,20 +114,22 @@ const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出
 # テーブルをそのまま流用し、900秒地点でloop_eventに切り替わる。これは初回の手書き案——実プレイでの
 # 体感調整が前提（山場が弱い/強い、谷が長い/短い等はいつでも数値だけで直せる）
 const STAGE_TIMELINES := {
+	# 2026-08-25：120秒プレイして「まだ恐怖感がない」との指摘。ウェーブ1（旧t=60・10体）が
+	# シャード限定・小規模すぎたのが主因と判断し、谷を浅く・山を大きく、全体的に間隔も詰めた
 	1: {
 		"segments": [
-			{ "t": 0.0,   "interval": 1.6, "count": 1, "mix": { "shard": 1.0 } },
-			{ "t": 45.0,  "interval": 2.4, "count": 1, "mix": { "shard": 1.0 } },
-			{ "t": 60.0,  "interval": 1.1, "count": 1, "mix": { "shard": 0.75, "fracture": 0.25 } },
-			{ "t": 125.0, "interval": 2.2, "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
-			{ "t": 145.0, "interval": 0.9, "count": 2, "mix": { "shard": 0.55, "fracture": 0.45 } },
-			{ "t": 215.0, "interval": 2.0, "count": 1, "mix": { "shard": 0.5,  "fracture": 0.35, "void_mark": 0.15 } },
-			{ "t": 240.0, "interval": 0.6, "count": 2, "mix": { "shard": 0.4,  "fracture": 0.4,  "void_mark": 0.2 } },
+			{ "t": 0.0,   "interval": 1.4, "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 40.0,  "interval": 2.0, "count": 1, "mix": { "shard": 1.0 } },
+			{ "t": 55.0,  "interval": 0.9, "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
+			{ "t": 120.0, "interval": 1.8, "count": 1, "mix": { "shard": 0.65, "fracture": 0.35 } },
+			{ "t": 140.0, "interval": 0.75,"count": 2, "mix": { "shard": 0.5,  "fracture": 0.5 } },
+			{ "t": 210.0, "interval": 1.7, "count": 1, "mix": { "shard": 0.45, "fracture": 0.35, "void_mark": 0.2 } },
+			{ "t": 235.0, "interval": 0.5, "count": 2, "mix": { "shard": 0.35, "fracture": 0.4,  "void_mark": 0.25 } },
 		],
 		"events": [
-			{ "t": 60.0,  "count": 10, "type": "shard" },
-			{ "t": 145.0, "count": 14, "type": "fracture" },
-			{ "t": 240.0, "count": 6,  "type": "void_mark" },
+			{ "t": 55.0,  "count": 16, "type": "shard" },
+			{ "t": 140.0, "count": 18, "type": "fracture" },
+			{ "t": 235.0, "count": 8,  "type": "void_mark" },
 		],
 	},
 	2: {
@@ -728,16 +730,12 @@ func _update_player(delta: float) -> void:
 		_player_shoot()
 
 func _player_shoot() -> void:
+	# 2026-08-25：3方向ばら撒き（正面+左右90度）は「囲まれる場面がほぼない」との指摘で
+	# 正面1発に簡略化。囲まれた時の保険として敵不在時に4方向を撃つ分岐も同じ理由で削除
 	var nearest := _nearest_enemy(player_pos)
 	if not nearest.is_empty():
 		var dir: Vector2 = ((nearest["pos"] as Vector2) - player_pos).normalized()
 		_fire_bullet(player_pos, dir, PLAYER_BULLET_DMG)
-		_fire_bullet(player_pos, dir.rotated(PI * 0.5), PLAYER_BULLET_DMG)
-		_fire_bullet(player_pos, dir.rotated(-PI * 0.5), PLAYER_BULLET_DMG)
-	else:
-		for i in range(4):
-			var a: float = float(i) / 4.0 * TAU
-			_fire_bullet(player_pos, Vector2(cos(a), sin(a)), PLAYER_BULLET_DMG)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 敵
