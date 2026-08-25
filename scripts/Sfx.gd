@@ -9,6 +9,9 @@ var _damage_stream:    AudioStreamWAV
 var _game_over_stream: AudioStreamWAV
 var _item_stream:      AudioStreamWAV
 var _lap_streams:      Dictionary = {}
+var _weapon_streams:   Dictionary = {}
+var _weapon_cd:        Dictionary = {}
+var _rain_impact_stream: AudioStreamWAV
 var _players: Array[AudioStreamPlayer] = []
 var _next_player  := 0
 var _shoot_cd     := 0.0
@@ -29,6 +32,16 @@ func _ready() -> void:
 		"good":    _build_chime([523.25],                  0.12, false),
 		"miss":    _build_chime([349.23, 261.63],          0.15, false),
 	}
+	# 2026-08-25：属性武器6種が全部Sfx.play_shoot()（弾の発射音）を共用しており「武器が全部同じ音」
+	# との指摘。ATTR_WEAPON_DATAのid単位で専用の音色を用意し、play_weapon(id)で鳴らし分ける
+	_weapon_streams = {
+		"water_pierce": _build_pierce_sfx(),
+		"fire_explode": _build_explode_sfx(),
+		"fire_chain":   _build_chain_sfx(),
+		"earth_orbit":  _build_beam_sfx(),
+		"earth_wave":   _build_pulse_sfx(),
+	}
+	_rain_impact_stream = _build_rain_impact_sfx()
 	_bgm_stream = _build_bgm()
 	for i in range(6):
 		var p := AudioStreamPlayer.new()
@@ -51,6 +64,9 @@ func unlock() -> void:
 
 func _process(delta: float) -> void:
 	if _shoot_cd > 0.0: _shoot_cd -= delta
+	for key in _weapon_cd.keys():
+		if (_weapon_cd[key] as float) > 0.0:
+			_weapon_cd[key] = (_weapon_cd[key] as float) - delta
 
 func play_shoot() -> void:
 	if _shoot_cd > 0.0: return
@@ -62,6 +78,16 @@ func play_evolve()    -> void: _play(_evolve_stream)
 func play_damage()    -> void: _play(_damage_stream)
 func play_game_over() -> void: _play(_game_over_stream)
 func play_item()      -> void: _play(_item_stream)
+
+# 属性武器の発射音。武器id（ATTR_WEAPON_DATAのキー）ごとに専用の音色を鳴らす。
+# 味方複数体が同時発火しても音が団子にならないよう、武器id単位で個別にクールダウンを持つ
+func play_weapon(id: String) -> void:
+	if not _weapon_streams.has(id): return
+	if (_weapon_cd.get(id, 0.0) as float) > 0.0: return
+	_weapon_cd[id] = 0.12
+	_play(_weapon_streams[id] as AudioStreamWAV)
+
+func play_rain_impact() -> void: _play(_rain_impact_stream)
 
 func play_lap(grade: String, pitch: float = 1.0) -> void:
 	if _lap_streams.has(grade):
@@ -109,6 +135,110 @@ func _build_magic_shoot_sfx() -> AudioStreamWAV:
 		if i >= echo_samples:
 			var prev := float(data.decode_s16((i - echo_samples) * 2)) / 32767.0
 			s += prev * 0.15
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_pierce_sfx() -> AudioStreamWAV:
+	# 貫通の矢（水）：既存のショット音より軽く・短く、上昇音で「シュッ」と抜ける質感
+	var dur := 0.09
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t    := float(i) / MIX_RATE
+		var env  := exp(-t * 30.0)
+		var freq := 2000.0 + t * 1800.0
+		var s : float = sin(TAU * freq * t) * 0.5 * env + sin(TAU * freq * 2.0 * t) * 0.15 * env
+		s *= 0.32
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_explode_sfx() -> AudioStreamWAV:
+	# 爆裂の紋章弾（火）：発射音の直後に低い炸裂音が続く2段構成
+	var dur := 0.22
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t := float(i) / MIX_RATE
+		var launch_env := exp(-t * 30.0)
+		var launch := sin(TAU * (1400.0 - t * 2600.0) * t) * launch_env
+		var boom_t := maxf(0.0, t - 0.03)
+		var boom_env := exp(-boom_t * 10.0)
+		var boom := (randf_range(-1.0, 1.0) * 0.6 + sin(TAU * 70.0 * boom_t) * 0.5) * boom_env
+		var s : float = (launch * 0.4 + boom * 0.55) * 0.6
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_chain_sfx() -> AudioStreamWAV:
+	# 稲妻の鎖（火）：ノイズ主体の電撃音を3連で鳴らし、敵から敵へ跳ねる感覚を音でも表現
+	var hit_dur := 0.045
+	var gap     := 0.03
+	var hits    := 3
+	var n := int(MIX_RATE * (hit_dur * hits + gap * (hits - 1)))
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var idx := 0
+	for h in range(hits):
+		var hn := int(MIX_RATE * hit_dur)
+		for i in range(hn):
+			var t := float(i) / MIX_RATE
+			var env := exp(-t * 60.0)
+			var freq := 2600.0 - float(h) * 300.0
+			var s : float = (sin(TAU * freq * t) * 0.5 + randf_range(-1.0, 1.0) * 0.5) * env * 0.5
+			if idx < n:
+				data.encode_s16(idx * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+			idx += 1
+		idx += int(MIX_RATE * gap)
+	return _wrap_wav(data)
+
+func _build_beam_sfx() -> AudioStreamWAV:
+	# 固めるビーム（土）：ノコギリ波寄りの倍音を重ねた「ジー」という持続音
+	var dur := 0.16
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t := float(i) / MIX_RATE
+		var env := 1.0 if t < dur * 0.6 else exp(-(t - dur * 0.6) * 40.0)
+		var freq := 180.0
+		var s := 0.0
+		for h in range(1, 5):
+			s += sin(TAU * freq * float(h) * t) * (1.0 / float(h)) * 0.18
+		s *= env
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_pulse_sfx() -> AudioStreamWAV:
+	# 衝撃の紋章波（土）：低い衝撃の一撃＋短いきらめきの尾を持つ「ドンッ」という音
+	var dur := 0.18
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t := float(i) / MIX_RATE
+		var thump_env := exp(-t * 16.0)
+		var thump := sin(TAU * (90.0 - t * 40.0) * t) * thump_env * 0.6
+		var shimmer_env := exp(-t * 9.0) * (1.0 if t > 0.02 else t / 0.02)
+		var shimmer := sin(TAU * 1200.0 * t) * shimmer_env * 0.12
+		var s : float = (thump + shimmer) * 0.7
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_rain_impact_sfx() -> AudioStreamWAV:
+	# 紋章の雨（水）着弾音：旧仕様はplay_evolve()（進化ファンファーレ）を流用しており、
+	# 「魔法の雫が跳ねる」場面にファンファーレはミスマッチだったため専用音を新設。
+	# 軽いチャイム＋控えめなノイズの「パシャッ」という水滴の跳ねる質感
+	var dur := 0.12
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t := float(i) / MIX_RATE
+		var env := exp(-t * 22.0)
+		var chime := sin(TAU * 1500.0 * t) * 0.4 + sin(TAU * 1900.0 * t) * 0.25
+		var splash := randf_range(-1.0, 1.0) * 0.3 * exp(-t * 60.0)
+		var s : float = (chime + splash) * env * 0.5
 		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
 	return _wrap_wav(data)
 

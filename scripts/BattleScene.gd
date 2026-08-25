@@ -56,7 +56,12 @@ const ALLY_SPRITE_CONTENT_RATIO := {
 	"octagram":      0.92,
 }
 
-const ENEMY_SPEED_BASE: float = 27.0  # 2026-08-10：まだ速いとの指摘で32→27にさらに減速
+# 2026-08-25：「ステージ終盤もかわしきれる」の根本原因を再検証。プレイヤー速度は220→130（0.59倍）
+# だった一方、敵基礎速度は75→27（0.36倍）とそれ以上に削られており、これまでの調整を通じて両者の
+# 速度比が一貫して開いていたと判明（130 vs 27＝敵はプレイヤーの21%しか出ていない）。包囲ウェーブだけ
+# 底上げする対症療法（RING_SPEED_MULT等）は一旦導入したが「根本解決にならない」との指摘を受けて撤回し、
+# 基礎速度そのものを07-16の水準（46）に近い45まで戻して比率自体を是正する方針に切り替えた
+const ENEMY_SPEED_BASE: float = 45.0
 const ENEMY_HP_BASE:    int   = 30
 const ENEMY_R:          float = 14.0  # デフォルト（後方互換）
 const ENEMY_DAMAGE:     int   = 1
@@ -999,7 +1004,7 @@ func _ally_weapon_tier_mult(a: Dictionary) -> float:
 	var coating_mult := 1.0 + float(coating) * COATING_DMG_K
 	return tier_mult * coating_mult
 
-func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int) -> void:
+func _fire_attr_weapon(a: Dictionary, id: String, wdata: Dictionary, level: int) -> void:
 	var ally_pos: Vector2 = a["node"].position
 	var nearest := _nearest_enemy(ally_pos)
 	if nearest.is_empty(): return
@@ -1010,13 +1015,13 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 		"projectile":
 			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 			_fire_bullet(ally_pos, dir, dmg, col, wdata.get("pierce", false), wdata.get("homing", false), wdata.get("explode_r", 0.0) as float, attr, true)
-			Sfx.play_shoot()
+			Sfx.play_weapon(id)
 		"chain":
-			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr)
+			_fire_chain_lightning(ally_pos, dmg, wdata["jumps"] as int, wdata["range"] as float, col, attr, id)
 		"pulse":
 			# 2026-08-06：範囲攻撃はダメージだけでなくAoE半径もLvに連動させる（Lv1〜5、+8%/Lv）
 			var pulse_r: float = (wdata["radius"] as float) * (1.0 + float(level - 1) * 0.08)
-			_fire_pulse(ally_pos, dmg, pulse_r, col, attr)
+			_fire_pulse(ally_pos, dmg, pulse_r, col, attr, id)
 		"rain":
 			var target := _pick_rain_target(wdata["radius"] as float)
 			if not target.is_empty():
@@ -1025,9 +1030,9 @@ func _fire_attr_weapon(a: Dictionary, _id: String, wdata: Dictionary, level: int
 			# 2026-08-07：太さのある直線ビーム。Lvが上がるほど太さも伸びる（+10%/Lv）
 			var dir: Vector2 = ((nearest["pos"] as Vector2) - ally_pos).normalized()
 			var beam_w: float = (wdata["width"] as float) * (1.0 + float(level - 1) * 0.1)
-			_fire_beam(ally_pos, dir, dmg, wdata["range"] as float, beam_w, col, attr)
+			_fire_beam(ally_pos, dir, dmg, wdata["range"] as float, beam_w, col, attr, id)
 
-func _fire_beam(from: Vector2, dir: Vector2, dmg: int, length: float, width: float, col: Color, attr: String = "") -> void:
+func _fire_beam(from: Vector2, dir: Vector2, dmg: int, length: float, width: float, col: Color, attr: String = "", weapon_id: String = "") -> void:
 	var to := from + dir * length
 	for e in enemies:
 		var epos: Vector2 = e["pos"] as Vector2
@@ -1047,7 +1052,7 @@ func _fire_beam(from: Vector2, dir: Vector2, dmg: int, length: float, width: flo
 	var tw := beam.create_tween()
 	tw.tween_property(beam, "modulate:a", 0.0, 0.16)
 	tw.tween_callback(beam.queue_free)
-	Sfx.play_shoot()
+	Sfx.play_weapon(weapon_id)
 
 func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: int, delta: float) -> void:
 	if not a.has("orbiters"):
@@ -1081,7 +1086,7 @@ func _update_ally_orbiter(a: Dictionary, id: String, wdata: Dictionary, level: i
 				orb["hit_cd"] = 0.35
 				break
 
-func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: float, col: Color, attr: String = "") -> void:
+func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: float, col: Color, attr: String = "", weapon_id: String = "") -> void:
 	var hit_enemies: Array = []
 	var cur_pos := from
 	var any_hit := false
@@ -1102,7 +1107,7 @@ func _fire_chain_lightning(from: Vector2, dmg: int, jumps: int, chain_range: flo
 		cur_pos = target["pos"] as Vector2
 		any_hit = true
 	if any_hit:
-		Sfx.play_shoot()
+		Sfx.play_weapon(weapon_id)
 
 func _draw_lightning_bolt(from: Vector2, to: Vector2, col: Color) -> void:
 	var bolt := Line2D.new()
@@ -1119,8 +1124,8 @@ func _draw_lightning_bolt(from: Vector2, to: Vector2, col: Color) -> void:
 	tw.tween_property(bolt, "modulate:a", 0.0, 0.2)
 	tw.tween_callback(bolt.queue_free)
 
-func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color, attr: String = "") -> void:
-	Sfx.play_shoot()
+func _fire_pulse(pos: Vector2, dmg: int, radius: float, col: Color, attr: String = "", weapon_id: String = "") -> void:
+	Sfx.play_weapon(weapon_id)
 	for e in enemies:
 		if pos.distance_to(e["pos"] as Vector2) < radius:
 			_damage_enemy(e, dmg, attr)
@@ -1196,7 +1201,8 @@ func _start_rain_strike(pos: Vector2, dmg: int, radius: float, col: Color, attr:
 		dtw.tween_callback(drop.queue_free)
 
 func _rain_impact(pos: Vector2, dmg: int, radius: float, col: Color, attr: String) -> void:
-	Sfx.play_evolve()
+	# 2026-08-25：旧仕様は進化ファンファーレ（play_evolve）を流用しておりミスマッチだったため専用音に変更
+	Sfx.play_rain_impact()
 	# 2026-08-14：敵が多いと着弾のたび画面が揺れて邪魔になるとの指摘で、揺れを大幅に弱めた（8.0→2.0）
 	shake_power = maxf(shake_power, 2.0)
 	for e in enemies:
@@ -1612,14 +1618,9 @@ func _start_weapon_select() -> void:
 		card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		layer.add_child(card)
 
-		var icon := Polygon2D.new()
-		icon.polygon = _make_star_pts(4, 20.0, 0.4)
-		icon.color = accent
+		var icon := _make_weapon_icon(wdata, accent)
 		icon.position = Vector2(cx + card_w * 0.5, cy + 40)
 		layer.add_child(icon)
-		var icon_tw := icon.create_tween()
-		icon_tw.set_loops()
-		icon_tw.tween_property(icon, "rotation", TAU, 4.0).from(0.0)
 
 		var head := _make_label(wdata["name"] as String, 15, Vector2(cx + 10, cy + 78))
 		head.custom_minimum_size = Vector2(card_w - 20, 40)
@@ -2680,6 +2681,94 @@ func _make_star_pts(n: int, size: float, inner_ratio: float) -> PackedVector2Arr
 		var d := size if i % 2 == 0 else size * inner_ratio
 		pts.append(Vector2(cos(a) * d, sin(a) * d))
 	return pts
+
+# 2026-08-25：武器選択カードが全種類「回転する★」で見分けがつかず、初見だと効果が想像できない
+# との指摘。武器のpattern（6種で全て別々）ごとに効果を示唆する簡易アイコンを生成する
+func _make_weapon_icon(wdata: Dictionary, accent: Color) -> Node2D:
+	var root := Node2D.new()
+	match wdata["pattern"] as String:
+		"rain":
+			for i in range(3):
+				var drop := Polygon2D.new()
+				drop.polygon = PackedVector2Array([Vector2(0, -9), Vector2(5, 4), Vector2(0, 9), Vector2(-5, 4)])
+				drop.color = accent
+				drop.position = Vector2((i - 1) * 12, -14)
+				root.add_child(drop)
+				var tw := drop.create_tween()
+				tw.set_loops()
+				tw.tween_interval(i * 0.2)
+				tw.tween_property(drop, "position:y", 14.0, 0.8).from(-14.0)
+		"projectile":
+			var shaft := Line2D.new()
+			shaft.width = 3.0
+			shaft.default_color = accent
+			shaft.add_point(Vector2(-16, 0))
+			shaft.add_point(Vector2(10, 0))
+			root.add_child(shaft)
+			var head := Polygon2D.new()
+			head.polygon = PackedVector2Array([Vector2(10, -7), Vector2(20, 0), Vector2(10, 7)])
+			head.color = accent
+			root.add_child(head)
+			if wdata.get("pierce", false):
+				for i in range(2):
+					var dot := Polygon2D.new()
+					dot.polygon = _make_ngon(8, 3.0)
+					dot.color = Color(accent.r, accent.g, accent.b, 0.55)
+					dot.position = Vector2(16 + i * 9, 0)
+					root.add_child(dot)
+			elif wdata.has("explode_r"):
+				var ring := Line2D.new()
+				ring.width = 1.6
+				ring.default_color = accent
+				for p in _make_ring_points(9.0, 1.0): ring.add_point(p)
+				ring.position = Vector2(14, 0)
+				root.add_child(ring)
+				var rtw := ring.create_tween()
+				rtw.set_loops()
+				rtw.tween_property(ring, "scale", Vector2(1.8, 1.8), 0.7).from(Vector2(0.6, 0.6))
+				rtw.parallel().tween_property(ring, "modulate:a", 0.0, 0.7).from(1.0)
+		"chain":
+			var pts := [Vector2(-16, -8), Vector2(-4, 6), Vector2(6, -6), Vector2(16, 8)]
+			for i in range(pts.size() - 1):
+				var seg := Line2D.new()
+				seg.width = 2.6
+				seg.default_color = accent
+				seg.add_point(pts[i])
+				seg.add_point(pts[i + 1])
+				root.add_child(seg)
+			for p in pts:
+				var node := Polygon2D.new()
+				node.polygon = _make_ngon(8, 3.2)
+				node.color = accent
+				node.position = p
+				root.add_child(node)
+		"beam":
+			var bar := Polygon2D.new()
+			bar.polygon = PackedVector2Array([Vector2(-17, -3), Vector2(17, -3), Vector2(17, 3), Vector2(-17, 3)])
+			bar.color = accent
+			root.add_child(bar)
+			var btw := bar.create_tween()
+			btw.set_loops()
+			btw.tween_property(bar, "modulate:a", 0.4, 0.5)
+			btw.tween_property(bar, "modulate:a", 1.0, 0.5)
+		"pulse":
+			for i in range(2):
+				var ring := Line2D.new()
+				ring.width = 2.0
+				ring.default_color = accent
+				for p in _make_ring_points(6.0, 1.0): ring.add_point(p)
+				root.add_child(ring)
+				var rtw := ring.create_tween()
+				rtw.set_loops()
+				rtw.tween_interval(i * 0.55)
+				rtw.tween_property(ring, "scale", Vector2(3.2, 3.2), 1.1).from(Vector2(0.4, 0.4))
+				rtw.parallel().tween_property(ring, "modulate:a", 0.0, 1.1).from(0.9)
+		_:
+			var icon := Polygon2D.new()
+			icon.polygon = _make_star_pts(4, 20.0, 0.4)
+			icon.color = accent
+			root.add_child(icon)
+	return root
 
 func _make_shape_polygon(shape: String, size: float) -> PackedVector2Array:
 	match shape:
