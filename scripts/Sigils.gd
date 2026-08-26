@@ -40,10 +40,11 @@ const SIGIL_DATA := {
 		"attribute": "triangle", "tier": 1, "guide_scale": 1.0,
 		# 2026-08-19：水（circle系）だけ実線の円が引かれ、火・土は多角形の輪郭線のみで円の位置は
 		# 回転するルーン飾りでしか示せていなかった。「ちゃんと丸の中に入ってる？」という確認を受け、
-		# 火・土の全tierにも明示的な円の輪郭を追加した（円は判定の重みを軽め＝0.3に設定）
+		# 火・土の全tierに円の輪郭を追加したが、tier1にまで足したことで「丸の中に三角」となり
+		# tier2と見分けがつかなくなったと指摘を受けた（2026-08-26）。circle_1が単体1輪郭のままなのと
+		# 揃うよう、tier1だけ円を外して単体の三角に戻した（tier2・3は据え置き）
 		"contours": [
-			{"shape": "circle",   "radius_ratio": 1.0, "weight": 0.3},
-			{"shape": "triangle", "radius_ratio": 1.0, "weight": 0.7},
+			{"shape": "triangle", "radius_ratio": 1.0, "weight": 1.0},
 		],
 		"spawn_shape": "triangle",
 		"lap_gain": {"perfect": 35, "great": 20, "good": 10},
@@ -76,10 +77,10 @@ const SIGIL_DATA := {
 	},
 	"square_1": {
 		"attribute": "square", "tier": 1, "guide_scale": 1.0,
-		# 2026-08-19：円の輪郭を追加（triangle_1と同じ理由）
+		# 2026-08-19：円の輪郭を追加（triangle_1と同じ理由）→ 2026-08-26：tier1が「丸の中に四角」に
+		# 見えてtier2と混同するとの指摘でtriangle_1と同様に撤回、単体の四角に戻した
 		"contours": [
-			{"shape": "circle", "radius_ratio": 1.0, "weight": 0.3},
-			{"shape": "square", "radius_ratio": 1.0, "weight": 0.7},
+			{"shape": "square", "radius_ratio": 1.0, "weight": 1.0},
 		],
 		"spawn_shape": "square",
 		"lap_gain": {"perfect": 35, "great": 20, "good": 10},
