@@ -223,13 +223,6 @@ const HEAL_AMOUNT       := 2
 const ALLY_HEAL_FRACTION := 0.15  # 2026-07-27：仲間にも回復効果を追加（最大HPの割合回復、仮）
 const WEAPON_ITEM_CHANCE := 0.025  # 2026-07-18：0.06→0.12 / 2026-08-07：0.12→0.08 / 2026-08-10：プレイヤーが強くなるペースが速すぎるとの指摘で0.08→0.05→「今の半分」で0.025
 const WEAPON_ITEM_COOLDOWN := 5.0  # 秒。回復と同じ理由でクールダウンを追加
-# 2026-08-26：「強い敵を倒したら基本アイテムも良いものであるべき」との指摘。ヴォイドマーク・エリートは
-# 撃破に手間がかかる分、倒した瞬間に見返りがあった方が終盤の「きつさ」の緩和になると判断し、
-# この2種の撃破に限り武器ドロップ抽選を大幅に引き上げ、通常の欠片より価値の高い欠片を確定ドロップする
-# （2026-08-26改訂：当初は通常欠片の確定ドロップだったが「確定より価値の高い欠片の方が取りがいがある」
-# との指摘を受け、value（進捗への貢献度）3倍の上質な欠片に変更）
-const NOTABLE_KILL_WEAPON_CHANCE := 0.25
-const NOTABLE_KILL_FRAGMENT_VALUE := 3
 const ITEM_PICKUP_R    := 60.0  # 2026-08-14：38だと拾いきれず画面にアイテムが積み上がって見た目がごちゃつくとの指摘で拡大
 const ITEM_R           := 14.0
 const FRAGMENT_R       := 7.0  # 2026-08-04：視認しづらいとの指摘で7.0→9.5に拡大 / 2026-08-18：目立ちすぎの原因は明るさでなくサイズだったと判明し7.0に戻す
@@ -289,12 +282,7 @@ const ATTR_WEAPON_DATA := {
 	# 2026-08-07：回転する紋章の盾は判定が軌道上の薄い輪っかだけ＋自身のノックバックで敵を弾き飛ばしてしまい、
 	# 同じ土属性の衝撃波（こちらもノックバック持ち）と弾き合って当たりにくいとの指摘で「固めるビーム」に作り替えた。
 	# 最も近い敵の方向へ、太さのある一直線のビームを放ち、直線上の敵をまとめて貫通ダメージする
-	# 2026-08-26：「射程が短いのか効果がないのか聞いてる感じがしない」との指摘を受けて調査したところ、
-	# 幅の問題ではなく本当に射程の問題だった——狙う相手を探す`_nearest_enemy()`はATTACK_RANGE(240)まで
-	# 拾ってくるのに、ビーム自体の届く距離は150しかなく、150〜240の間の敵を「狙ってはいるが実際は
-	# 届いていない」空振りが頻発していた。射程をATTACK_RANGEより長い260に引き上げて解消。
-	# 幅も敵の並び方次第で1体しか巻き込めなかった問題への対処として合わせて拡大
-	"earth_orbit":  { "attr": "square",   "name": "固めるビーム",   "pattern": "beam",       "cooldown": 1.3, "dmg": 9,  "col": Color(0.95, 0.75, 0.3),  "range": 260.0, "width": 40.0 },
+	"earth_orbit":  { "attr": "square",   "name": "固めるビーム",   "pattern": "beam",       "cooldown": 1.3, "dmg": 7,  "col": Color(0.95, 0.75, 0.3),  "range": 150.0, "width": 22.0 },
 	"earth_wave":   { "attr": "square",   "name": "衝撃の紋章波",   "pattern": "pulse",      "cooldown": 2.4, "dmg": 9,  "col": Color(0.85, 0.65, 0.25), "radius": 95.0 },
 }
 
@@ -870,7 +858,7 @@ func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 			ward = PREDATOR_ATTRS[randi() % PREDATOR_ATTRS.size()]
 			_attach_predator_ring(node, r, ward)
 
-	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite, "etype": etype })
+	enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite })
 
 # エリート個体のリング表示（天敵ウォードと同じ発想。色でtough/swiftの系統が直感的にわかるようにする）
 func _attach_elite_ring(parent: Node2D, r: float, ring_color: Color) -> void:
@@ -1397,16 +1385,11 @@ func _explode_at(pos: Vector2, dmg: int, radius: float, col: Color, exclude: Dic
 func _on_enemy_death(e: Dictionary) -> void:
 	Sfx.play_enemy_die()
 	_spawn_death_particles(e["pos"] as Vector2, e["color"] as Color, e["radius"] as float)
-	# 2026-08-26：ヴォイドマーク・エリートは倒すのに手間がかかる分、見返りも大きくして
-	# 「強い敵を倒す＝良いアイテムに繋がる」を成立させる（終盤の手応え不足への対処）
-	var is_notable: bool = (e.get("etype", "") as String) == "void_mark" or (e.get("elite", false) as bool)
 	# 2026-08-14：毎キル確定ドロップだと画面にアイテムが積み上がりごちゃつくとの指摘。
 	# VSも毎回ではなく敵の半分程度しか落とさないとの指摘を受け、50%抽選に変更
 	# 2026-08-18：ただし最初の仲間が出る前に運悪く欠片が出ないと、1人きりのまま「事故る」との指摘。
 	# 最初の仲間が出るまでは確定ドロップにして、事故らないよう保証する
-	if is_notable:
-		_spawn_fragment(e["pos"] as Vector2, NOTABLE_KILL_FRAGMENT_VALUE)
-	elif allies.size() == 0 or randf() < 0.5:
+	if allies.size() == 0 or randf() < 0.5:
 		_spawn_fragment(e["pos"] as Vector2)
 	# 2026-08-08：キャラアイテム（召喚）はランダム抽選をやめ、欠片を集めて閾値に達したときだけドロップする
 	# 確実なトリガーに変更（_update_itemsの欠片ピックアップ処理を参照）
@@ -1414,11 +1397,10 @@ func _on_enemy_death(e: Dictionary) -> void:
 	# どちらも「一番忙しい瞬間（=物量に押されてる時）にドロップが殺到する」のを防ぐのが狙い
 	var hp_frac := float(player_hp) / float(player_hp_max)
 	var heal_chance := HEAL_ITEM_BASE_CHANCE + (1.0 - hp_frac) * HEAL_ITEM_HP_SCALE
-	var weapon_chance := NOTABLE_KILL_WEAPON_CHANCE if is_notable else WEAPON_ITEM_CHANCE
 	if elapsed_time - last_heal_drop_time >= HEAL_ITEM_COOLDOWN and randf() < heal_chance:
 		last_heal_drop_time = elapsed_time
 		_spawn_heal_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
-	elif elapsed_time - last_weapon_drop_time >= WEAPON_ITEM_COOLDOWN and randf() < weapon_chance:
+	elif elapsed_time - last_weapon_drop_time >= WEAPON_ITEM_COOLDOWN and randf() < WEAPON_ITEM_CHANCE:
 		last_weapon_drop_time = elapsed_time
 		_spawn_weapon_item((e["pos"] as Vector2) + Vector2(randf_range(-10.0, 10.0), randf_range(-10.0, 10.0)))
 	e["node"].queue_free()
@@ -1464,19 +1446,13 @@ func _update_particles(delta: float) -> void:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # アイテム
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-func _spawn_fragment(pos: Vector2, value: int = 1) -> void:
+func _spawn_fragment(pos: Vector2) -> void:
 	# 2026-08-04：水色だと水属性の仲間/弾と紛らわしく視認性が悪いとの指摘で、属性を持たない中立な銀白に変更
 	# 2026-08-14：最頻出アイテムが白すぎて目立ちすぎるとの指摘で、控えめなグレーに落とした（識別性は形状で担保）
-	# 2026-08-26：「強敵撃破は確定ドロップより価値の高い欠片の方が取りがいがある」との指摘。value>1の
-	# 上質な欠片は、キャラアイテムと同じ豪華な6方向星＋金色に変えて「これは違う」と一目でわかるようにした
-	var premium := value > 1
-	var col := Color(1.0, 0.85, 0.35) if premium else Color(0.55, 0.53, 0.6)
-	var r   := FRAGMENT_R * (1.7 if premium else 1.0)
-	var pts := 6 if premium else 4
-	var node := _make_rune_pickup(col, r, pts, 0.4, 3.0)
+	var node := _make_rune_pickup(Color(0.55, 0.53, 0.6), FRAGMENT_R, 4, 0.4, 3.0)
 	node.position = pos
 	add_child(node)
-	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node, "value": value })
+	items.append({ "type": "fragment", "subtype": "", "pos": pos, "node": node })
 
 func _spawn_char_item(pos: Vector2) -> void:
 	# 2026-07-27：属性は完全ランダムをやめ、拾った後にプレイヤーが選択する（敵の属性相性ができたため）
@@ -1552,7 +1528,7 @@ func _update_items() -> void:
 				Sfx.play_item()
 				it["node"].queue_free()
 				to_remove.append(i)
-				fragment_count += it.get("value", 1) as int
+				fragment_count += 1
 				if fragment_count >= fragment_threshold:
 					fragment_count -= fragment_threshold
 					fragment_threshold += FRAGMENT_THRESHOLD_GROWTH
@@ -2067,25 +2043,16 @@ func _attach_ally_idle_motion(node: Node2D) -> void:
 
 func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
-	# 2026-08-26：GOOD/GREAT/PERFECTの4段階に離散化する案を一度試したが、「あくまで精度と周回に
-	# 基づいた値で強さを判断してほしい、召喚獣本体と同じ基準じゃないとギャップが出る」との指摘で撤回。
-	# 中心の数値（半径・太さ・パーティクル数・シェイク・ノックバック）は_ally_size()と同じ
-	# 「minfで頭打ちする連続スケーリング」に戻し、可変幅そのものを大きく広げることで
-	# 「完全にわかる」との両立を図った。2本目のリング・フラッシュ・電撃といった追加演出だけは
-	# 既存のオーラ/紋章リングと同じ閾値（30/70）でオン/オフする
+	# 2026-07-16：ノックバックの強さも召喚パワーに応じて増すよう変更（強い召喚ほど吹き飛ばしも大きく）
+	# 2026-07-18：見た目（リングの広がり・パーティクル数・電撃）もパワーに連動させ、強い召喚ほど派手になるように拡張
 	Sfx.play_evolve()
-	var t := clampf(float(power) / 120.0, 0.0, 1.0)  # power=120で頭打ち（PERFECT=70はt≈0.58）
+	shake_power = maxf(shake_power, 10.0 + minf(14.0, float(power) * 0.15))
 
-	var burst_r    := SUMMON_BURST_R * (0.7 + 1.3 * t)
-	var ring_width := 3.0 + 9.0 * t
-	var particle_n := 5 + int(22.0 * t)
-	var shake_amt  := 6.0 + 22.0 * t
-	var kb_force   := 180.0 + 320.0 * t
-	var burst_col : Color = col.lerp(Color(1.0, 0.95, 0.75), 0.5 * t)
-
-	shake_power = maxf(shake_power, shake_amt)
-
-	var dmg := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
+	var dmg      := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
+	var kb_force := 220.0 + minf(260.0, float(power) * 3.5)
+	# 2026-08-06：見た目のリングだけpowerで広がり実際の判定は固定半径のままだったズレを解消。
+	# 厚塗りが強いほど範囲攻撃の当たり判定自体も広がるようにし、一発逆転感を演出だけでなく実効果にも反映
+	var burst_r := SUMMON_BURST_R * (1.0 + minf(0.7, float(power) / 150.0))
 	for e in enemies:
 		var diff: Vector2 = (e["pos"] as Vector2) - pos
 		var dist := diff.length()
@@ -2095,53 +2062,26 @@ func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> v
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
 
+	var visual_r := burst_r
 	var ring := Line2D.new()
-	ring.width = ring_width
-	ring.default_color = burst_col
+	ring.width = 4.0 + minf(6.0, float(power) * 0.05)
+	ring.default_color = col
 	for p in _make_ring_points(20.0, 1.0):
 		ring.add_point(p)
 	ring.position = pos
 	add_child(ring)
 	var ring_tw := ring.create_tween()
 	ring_tw.set_parallel(true)
-	ring_tw.tween_property(ring, "scale", Vector2.ONE * (burst_r / 20.0), 0.35)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (visual_r / 20.0), 0.35)
 	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.35)
 	ring_tw.chain().tween_callback(ring.queue_free)
 
-	if power >= 30:
-		# GREAT相当以上は少し遅れて広がる2本目のリングを重ね、厚みのある衝撃波にする
-		var ring2 := Line2D.new()
-		ring2.width = ring_width * 0.6
-		ring2.default_color = Color(burst_col.r, burst_col.g, burst_col.b, 0.7)
-		for p in _make_ring_points(20.0, 1.0):
-			ring2.add_point(p)
-		ring2.position = pos
-		add_child(ring2)
-		var ring2_tw := ring2.create_tween()
-		ring2_tw.tween_interval(0.08)
-		ring2_tw.set_parallel(true)
-		ring2_tw.tween_property(ring2, "scale", Vector2.ONE * (burst_r * 1.3 / 20.0), 0.4)
-		ring2_tw.tween_property(ring2, "modulate:a", 0.0, 0.4)
-		ring2_tw.chain().tween_callback(ring2.queue_free)
-
+	_spawn_summon_particles(pos, col, power)
 	if power >= 70:
-		# PERFECT相当だけ、中心が一瞬白く弾けるフラッシュを追加して他ランクと混同しないようにする
-		var flash := Polygon2D.new()
-		flash.polygon = _make_ngon(16, 34.0)
-		flash.color = Color(1.0, 1.0, 0.95, 0.9)
-		flash.position = pos
-		add_child(flash)
-		var flash_tw := flash.create_tween()
-		flash_tw.set_parallel(true)
-		flash_tw.tween_property(flash, "scale", Vector2.ONE * 2.4, 0.22)
-		flash_tw.tween_property(flash, "modulate:a", 0.0, 0.22)
-		flash_tw.chain().tween_callback(flash.queue_free)
+		_spawn_lightning_crackle(pos, visual_r)
 
-	_spawn_summon_particles(pos, burst_col, particle_n)
-	if power >= 30:
-		_spawn_lightning_crackle(pos, burst_r, 3 if power < 70 else 7)
-
-func _spawn_summon_particles(pos: Vector2, col: Color, count: int) -> void:
+func _spawn_summon_particles(pos: Vector2, col: Color, power: int) -> void:
+	var count: int = mini(20, 6 + power / 8)
 	for _i in range(count):
 		var angle := randf() * TAU
 		var spd   := randf_range(80.0, 220.0)
@@ -2152,8 +2092,9 @@ func _spawn_summon_particles(pos: Vector2, col: Color, count: int) -> void:
 		add_child(node)
 		particles.append({ "node": node, "vel": Vector2(cos(angle), sin(angle)) * spd, "life": 1.0 })
 
-func _spawn_lightning_crackle(pos: Vector2, visual_r: float, bolt_count: int = 6) -> void:
+func _spawn_lightning_crackle(pos: Vector2, visual_r: float) -> void:
 	# パワーが高い召喚だけ、電撃っぽいジグザグ線を放射状に走らせる（「バリバリ」演出）
+	var bolt_count := 6
 	for i in range(bolt_count):
 		var base_angle := (float(i) / float(bolt_count)) * TAU + randf_range(-0.2, 0.2)
 		var bolt := Line2D.new()
@@ -2196,38 +2137,20 @@ func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	tw.tween_property(ring, "rotation", TAU, 6.0).from(0.0)
 
 # 2026-08-07：厚塗りの強さがリング以外で伝わらないとの指摘を受け、強い仲間だけに柔らかいオーラを追加
-# 2026-08-26：「強く召喚できたはずなのに見た目が変わらない」との指摘。サイズがスプライトの見た目半径
-# （sz*1.4相当）とほとんど差がなく、かつ低アルファの塗りだけだったため実質見えていなかった。
-# サイズ差を大きく確保しつつ、視認性の要になる輪郭線（Line2D）を追加した
-# 2026-08-26：「オーラの色も検討したほうがいい」との指摘。独自の金/水色を新たに割り当てていたが、
-# 属性色（本体の色相）と偶然近い色になる組み合わせ（土＝茶黄とオーラの金など）で混同しかねないため、
-# `_attach_sigil_ring`と全く同じ配色（強＝金・中＝水色）に揃えた。「強さ」チャンネルは属性色と
-# 独立させつつ、同じ強さなら常に同じ色で表現する一貫性を優先した
 func _attach_power_aura(parent: Node2D, sz: float, power: int) -> void:
 	if power < 30: return
 	var strong := power >= 70
-	var aura_r := sz * (3.2 if strong else 2.4)
-	var col := Color(1.0, 0.85, 0.3) if strong else Color(0.75, 0.9, 1.0)
-
 	var aura := Polygon2D.new()
-	aura.polygon = _make_ngon(24, aura_r)
-	aura.color = Color(col.r, col.g, col.b, 0.5 if strong else 0.32)
+	aura.polygon = _make_ngon(20, sz * (2.0 if strong else 1.6))
+	var col := Color(1.0, 0.92, 0.55) if strong else Color(0.85, 0.85, 0.95)
+	aura.color = Color(col.r, col.g, col.b, 0.28 if strong else 0.16)
 	aura.z_index = -1
 	parent.add_child(aura)
 
-	var ring := Line2D.new()
-	ring.width = 2.6 if strong else 1.8
-	ring.default_color = col
-	for p in _make_ring_points(aura_r, 1.0):
-		ring.add_point(p)
-	ring.z_index = -1
-	parent.add_child(ring)
-
-	for shape_node in [aura, ring]:
-		var tw := shape_node.create_tween()
-		tw.set_loops()
-		tw.tween_property(shape_node, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_property(shape_node, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var tw := aura.create_tween()
+	tw.set_loops()
+	tw.tween_property(aura, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(aura, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _make_ring_points(radius: float, arc_frac: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
