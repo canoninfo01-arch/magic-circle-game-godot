@@ -2155,9 +2155,11 @@ func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 
 # 2026-08-07：厚塗りの強さがリング以外で伝わらないとの指摘を受け、強い仲間だけに柔らかいオーラを追加
 # 2026-08-26：「見た目が変わらない」との指摘でサイズ・アルファを拡大、視認性の要になる輪郭線（Line2D）を
-# 追加。色は独自の金/水色だと属性色（土＝茶黄など）と混同しかねないため`_attach_sigil_ring`と統一
-# （一度この改修一式でバトル開始直後にグレー画面になる不具合が発生し、原因切り分けのため一旦全体を
-# revertした。この関数単体は最有力候補ではなかったため先行して再適用し、様子を見る）
+# 追加。色は独自の金/水色だと属性色（土＝茶黄など）と混同しかねないため`_attach_sigil_ring`と統一。
+# （この改修一式でバトル開始直後にグレー画面になる不具合が発生し、原因切り分けのためrevert→再適用を
+# 繰り返した末、この関数だけが唯一「異なる型のノードを1つの配列にまとめてループで処理する」という
+# コードベースに前例のない書き方をしていたため疑い、aura用・ring用でtween設定を別々に書く
+# 従来通りのスタイルに書き直した）
 func _attach_power_aura(parent: Node2D, sz: float, power: int) -> void:
 	if power < 30: return
 	var strong := power >= 70
@@ -2178,11 +2180,15 @@ func _attach_power_aura(parent: Node2D, sz: float, power: int) -> void:
 	ring.z_index = -1
 	parent.add_child(ring)
 
-	for shape_node in [aura, ring]:
-		var tw := shape_node.create_tween()
-		tw.set_loops()
-		tw.tween_property(shape_node, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		tw.tween_property(shape_node, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var aura_tw := aura.create_tween()
+	aura_tw.set_loops()
+	aura_tw.tween_property(aura, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	aura_tw.tween_property(aura, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	var ring_tw := ring.create_tween()
+	ring_tw.set_loops()
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * 1.15, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * 0.92, 1.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func _make_ring_points(radius: float, arc_frac: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
