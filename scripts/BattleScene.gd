@@ -2060,16 +2060,25 @@ func _attach_ally_idle_motion(node: Node2D) -> void:
 
 func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> void:
 	# 召喚の瞬間に周囲の敵へ範囲攻撃＋派手な演出を出し、「召喚した」実感を強める
-	# 2026-07-16：ノックバックの強さも召喚パワーに応じて増すよう変更（強い召喚ほど吹き飛ばしも大きく）
-	# 2026-07-18：見た目（リングの広がり・パーティクル数・電撃）もパワーに連動させ、強い召喚ほど派手になるように拡張
+	# 2026-08-26：GOOD/GREAT/PERFECTの4段階に離散化する案を一度試したが、「あくまで精度と周回に
+	# 基づいた値で強さを判断してほしい、召喚獣本体と同じ基準じゃないとギャップが出る」との指摘で撤回。
+	# 中心の数値（半径・太さ・パーティクル数・シェイク・ノックバック）は_ally_size()と同じ
+	# 「minfで頭打ちする連続スケーリング」に戻し、可変幅そのものを大きく広げることで
+	# 「完全にわかる」との両立を図った。2本目のリング・フラッシュ・電撃といった追加演出だけは
+	# 既存のオーラ/紋章リングと同じ閾値（30/70）でオン/オフする
 	Sfx.play_evolve()
-	shake_power = maxf(shake_power, 10.0 + minf(14.0, float(power) * 0.15))
+	var t := clampf(float(power) / 120.0, 0.0, 1.0)  # power=120で頭打ち（PERFECT=70はt≈0.58）
 
-	var dmg      := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
-	var kb_force := 220.0 + minf(260.0, float(power) * 3.5)
-	# 2026-08-06：見た目のリングだけpowerで広がり実際の判定は固定半径のままだったズレを解消。
-	# 厚塗りが強いほど範囲攻撃の当たり判定自体も広がるようにし、一発逆転感を演出だけでなく実効果にも反映
-	var burst_r := SUMMON_BURST_R * (1.0 + minf(0.7, float(power) / 150.0))
+	var burst_r    := SUMMON_BURST_R * (0.7 + 1.3 * t)
+	var ring_width := 3.0 + 9.0 * t
+	var particle_n := 5 + int(22.0 * t)
+	var shake_amt  := 6.0 + 22.0 * t
+	var kb_force   := 180.0 + 320.0 * t
+	var burst_col : Color = col.lerp(Color(1.0, 0.95, 0.75), 0.5 * t)
+
+	shake_power = maxf(shake_power, shake_amt)
+
+	var dmg := SUMMON_BURST_DMG_BASE + int(float(power) * 0.15)
 	for e in enemies:
 		var diff: Vector2 = (e["pos"] as Vector2) - pos
 		var dist := diff.length()
@@ -2079,26 +2088,53 @@ func _summon_burst(pos: Vector2, col: Color, power: int, attr: String = "") -> v
 			var kb_dir := diff.normalized() if dist > 1.0 else Vector2(1.0, 0.0)
 			e["kb"] = (e["kb"] as Vector2) + kb_dir * kb_force
 
-	var visual_r := burst_r
 	var ring := Line2D.new()
-	ring.width = 4.0 + minf(6.0, float(power) * 0.05)
-	ring.default_color = col
+	ring.width = ring_width
+	ring.default_color = burst_col
 	for p in _make_ring_points(20.0, 1.0):
 		ring.add_point(p)
 	ring.position = pos
 	add_child(ring)
 	var ring_tw := ring.create_tween()
 	ring_tw.set_parallel(true)
-	ring_tw.tween_property(ring, "scale", Vector2.ONE * (visual_r / 20.0), 0.35)
+	ring_tw.tween_property(ring, "scale", Vector2.ONE * (burst_r / 20.0), 0.35)
 	ring_tw.tween_property(ring, "modulate:a", 0.0, 0.35)
 	ring_tw.chain().tween_callback(ring.queue_free)
 
-	_spawn_summon_particles(pos, col, power)
-	if power >= 70:
-		_spawn_lightning_crackle(pos, visual_r)
+	if power >= 30:
+		# GREAT相当以上は少し遅れて広がる2本目のリングを重ね、厚みのある衝撃波にする
+		var ring2 := Line2D.new()
+		ring2.width = ring_width * 0.6
+		ring2.default_color = Color(burst_col.r, burst_col.g, burst_col.b, 0.7)
+		for p in _make_ring_points(20.0, 1.0):
+			ring2.add_point(p)
+		ring2.position = pos
+		add_child(ring2)
+		var ring2_tw := ring2.create_tween()
+		ring2_tw.tween_interval(0.08)
+		ring2_tw.set_parallel(true)
+		ring2_tw.tween_property(ring2, "scale", Vector2.ONE * (burst_r * 1.3 / 20.0), 0.4)
+		ring2_tw.tween_property(ring2, "modulate:a", 0.0, 0.4)
+		ring2_tw.chain().tween_callback(ring2.queue_free)
 
-func _spawn_summon_particles(pos: Vector2, col: Color, power: int) -> void:
-	var count: int = mini(20, 6 + power / 8)
+	if power >= 70:
+		# PERFECT相当だけ、中心が一瞬白く弾けるフラッシュを追加して他ランクと混同しないようにする
+		var flash := Polygon2D.new()
+		flash.polygon = _make_ngon(16, 34.0)
+		flash.color = Color(1.0, 1.0, 0.95, 0.9)
+		flash.position = pos
+		add_child(flash)
+		var flash_tw := flash.create_tween()
+		flash_tw.set_parallel(true)
+		flash_tw.tween_property(flash, "scale", Vector2.ONE * 2.4, 0.22)
+		flash_tw.tween_property(flash, "modulate:a", 0.0, 0.22)
+		flash_tw.chain().tween_callback(flash.queue_free)
+
+	_spawn_summon_particles(pos, burst_col, particle_n)
+	if power >= 30:
+		_spawn_lightning_crackle(pos, burst_r, 3 if power < 70 else 7)
+
+func _spawn_summon_particles(pos: Vector2, col: Color, count: int) -> void:
 	for _i in range(count):
 		var angle := randf() * TAU
 		var spd   := randf_range(80.0, 220.0)
@@ -2109,9 +2145,8 @@ func _spawn_summon_particles(pos: Vector2, col: Color, power: int) -> void:
 		add_child(node)
 		particles.append({ "node": node, "vel": Vector2(cos(angle), sin(angle)) * spd, "life": 1.0 })
 
-func _spawn_lightning_crackle(pos: Vector2, visual_r: float) -> void:
+func _spawn_lightning_crackle(pos: Vector2, visual_r: float, bolt_count: int = 6) -> void:
 	# パワーが高い召喚だけ、電撃っぽいジグザグ線を放射状に走らせる（「バリバリ」演出）
-	var bolt_count := 6
 	for i in range(bolt_count):
 		var base_angle := (float(i) / float(bolt_count)) * TAU + randf_range(-0.2, 0.2)
 		var bolt := Line2D.new()
