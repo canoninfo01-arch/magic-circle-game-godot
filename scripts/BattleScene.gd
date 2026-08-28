@@ -1461,9 +1461,11 @@ func _update_particles(delta: float) -> void:
 func _spawn_fragment(pos: Vector2, value: int = 1) -> void:
 	# 2026-08-04：水色だと水属性の仲間/弾と紛らわしく視認性が悪いとの指摘で、属性を持たない中立な銀白に変更
 	# 2026-08-14：最頻出アイテムが白すぎて目立ちすぎるとの指摘で、控えめなグレーに落とした（識別性は形状で担保）
-	# 2026-08-26：強敵撃破時（value>1）はキャラアイテムと同じ豪華な6方向星＋金色の「上質な欠片」にする
+	# 2026-08-26：強敵撃破時（value>1）は豪華な6方向星の「上質な欠片」にする。当初は金色にしていたが
+	# 武器アイテムの色(1.0,0.85,0.4)とほぼ同じで紛らわしいとの指摘を受け、明るい銀白（他のどのアイテム
+	# 色とも被らない）に変更。形状（6方向星）だけで「特別」を伝える
 	var premium := value > 1
-	var col := Color(1.0, 0.85, 0.35) if premium else Color(0.55, 0.53, 0.6)
+	var col := Color(0.85, 0.92, 1.0) if premium else Color(0.55, 0.53, 0.6)
 	var r   := FRAGMENT_R * (1.7 if premium else 1.0)
 	var pts := 6 if premium else 4
 	var node := _make_rune_pickup(col, r, pts, 0.4, 3.0)

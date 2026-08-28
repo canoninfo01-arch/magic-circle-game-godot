@@ -15,6 +15,8 @@ func _ready() -> void:
 	env.environment = e
 	add_child(env)
 
+	# 2026-08-26：タイトル・装備選択画面にBGM/タップ音が無いとの指摘。BattleSceneでしか鳴らしていなかった
+	Sfx.play_bgm()
 	_build_ui()
 
 func _build_ui() -> void:
@@ -63,4 +65,6 @@ func _make_centered_label(txt: String, font_size: int, y: float, box_h: float) -
 
 func _unhandled_input(event: InputEvent) -> void:
 	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed):
+		Sfx.unlock()
+		Sfx.play_tap()
 		get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn")

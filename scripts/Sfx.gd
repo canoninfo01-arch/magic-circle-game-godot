@@ -12,6 +12,7 @@ var _lap_streams:      Dictionary = {}
 var _weapon_streams:   Dictionary = {}
 var _weapon_cd:        Dictionary = {}
 var _rain_impact_stream: AudioStreamWAV
+var _tap_stream:       AudioStreamWAV
 var _players: Array[AudioStreamPlayer] = []
 var _next_player  := 0
 var _shoot_cd     := 0.0
@@ -42,6 +43,7 @@ func _ready() -> void:
 		"earth_wave":   _build_pulse_sfx(),
 	}
 	_rain_impact_stream = _build_rain_impact_sfx()
+	_tap_stream = _build_tap_sfx()
 	_bgm_stream = _build_bgm()
 	for i in range(6):
 		var p := AudioStreamPlayer.new()
@@ -88,6 +90,9 @@ func play_weapon(id: String) -> void:
 	_play(_weapon_streams[id] as AudioStreamWAV)
 
 func play_rain_impact() -> void: _play(_rain_impact_stream)
+
+# 2026-08-26：タイトル・装備選択画面にBGM/タップ音が無いとの指摘。ボタン押下用の短いクリック音
+func play_tap() -> void: _play(_tap_stream)
 
 func play_lap(grade: String, pitch: float = 1.0) -> void:
 	if _lap_streams.has(grade):
@@ -239,6 +244,19 @@ func _build_rain_impact_sfx() -> AudioStreamWAV:
 		var chime := sin(TAU * 1500.0 * t) * 0.4 + sin(TAU * 1900.0 * t) * 0.25
 		var splash := randf_range(-1.0, 1.0) * 0.3 * exp(-t * 60.0)
 		var s : float = (chime + splash) * env * 0.5
+		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
+	return _wrap_wav(data)
+
+func _build_tap_sfx() -> AudioStreamWAV:
+	# UIボタン用の短いクリック音。ゲーム内の魔法弾系の音とかぶらない、乾いた木質の「コッ」という質感
+	var dur := 0.05
+	var n   := int(MIX_RATE * dur)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for i in range(n):
+		var t := float(i) / MIX_RATE
+		var env := exp(-t * 70.0)
+		var s : float = (sin(TAU * 900.0 * t) * 0.6 + randf_range(-1.0, 1.0) * 0.25) * env * 0.5
 		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
 	return _wrap_wav(data)
 

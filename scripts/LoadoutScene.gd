@@ -46,6 +46,9 @@ func _ready() -> void:
 	env.environment = e
 	add_child(env)
 
+	# 2026-08-26：タイトル・装備選択画面にBGM/タップ音が無いとの指摘。play_bgm()は再生中なら
+	# 何もしないので、タイトルから継続してきた場合も二重再生にはならない
+	Sfx.play_bgm()
 	_build_ui()
 
 func _build_ui() -> void:
@@ -72,7 +75,10 @@ func _build_ui() -> void:
 		upgrade_btn.add_theme_font_override("font", jp_font)
 	upgrade_btn.add_theme_font_size_override("font_size", 15)
 	upgrade_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	upgrade_btn.pressed.connect(_open_upgrade_panel)
+	upgrade_btn.pressed.connect(func():
+		Sfx.play_tap()
+		_open_upgrade_panel()
+	)
 	layer.add_child(upgrade_btn)
 
 	_build_stage_row(layer, H * 0.20)
@@ -104,6 +110,7 @@ func _build_ui() -> void:
 	start_btn.add_theme_stylebox_override("pressed", sb_hover)
 	start_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	start_btn.pressed.connect(func():
+		Sfx.play_tap()
 		get_tree().change_scene_to_file("res://scenes/BattleScene.tscn")
 	)
 	layer.add_child(start_btn)
@@ -133,6 +140,7 @@ func _build_stage_row(layer: CanvasLayer, row_y: float) -> void:
 		chip.add_theme_font_size_override("font_size", 13)
 		chip.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		chip.pressed.connect(func():
+			Sfx.play_tap()
 			GameData.selected_stage = stage
 			_refresh_stage_buttons()
 		)
@@ -198,6 +206,7 @@ func _build_attr_row(layer: CanvasLayer, attr: String, row_y: float, row_h: floa
 		chip.add_theme_font_size_override("font_size", 16)
 		chip.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		chip.pressed.connect(func():
+			Sfx.play_tap()
 			GameData.equip_sigil(attr, sigil_id)
 			_refresh_attr_chips(attr)
 		)
@@ -271,6 +280,7 @@ func _open_upgrade_panel() -> void:
 	close_btn.add_theme_font_size_override("font_size", 20)
 	close_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	close_btn.pressed.connect(func():
+		Sfx.play_tap()
 		upgrade_layer.queue_free()
 		upgrade_layer = null
 		zankou_lbl.text = "残光: %d" % GameData.zankou
@@ -310,6 +320,7 @@ func _build_upgrade_row(layer: CanvasLayer, key: String, row_y: float, balance_l
 			buy_btn.disabled = not GameData.can_afford_upgrade(key)
 
 	buy_btn.pressed.connect(func():
+		Sfx.play_tap()
 		if GameData.buy_upgrade(key):
 			balance_lbl.text = "残光: %d" % GameData.zankou
 			for r in all_refreshers:
