@@ -1050,6 +1050,12 @@ func _fire_beam(from: Vector2, dir: Vector2, dmg: int, length: float, width: flo
 		if epos.distance_to(closest) < width * 0.5 + (e["radius"] as float):
 			_damage_enemy(e, dmg, attr)
 			e["flash"] = 0.12
+			# 2026-08-31：「当たっても止まってない」との指摘。2026-08-07に旧「回転する紋章の盾」から
+			# 作り替えた際、同属性の衝撃波と弾き合っていた反省からノックバックを完全に無くしていたが、
+			# それだと命中しても敵の動きに何の変化もなく「効いてる感」が皆無だった。ビームの進行方向への
+			# 軽いノックバックのみ加え、衝撃波（自分中心の放射状）と向きがぶつかりにくいよう弱めの
+			# 力（150）にとどめて再発を防ぐ
+			e["kb"] = (e["kb"] as Vector2) + dir * 150.0
 	var beam := Line2D.new()
 	beam.width = width
 	beam.default_color = Color(col.r, col.g, col.b, 0.75)
