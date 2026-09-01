@@ -79,7 +79,11 @@ const ENEMY_TYPES := {
 	# シャードは雑魚のまま、フラクチャー・ヴォイドマークは持久力を底上げして「群れの芯」「本当の強敵」の役割を明確化
 	"shard":      { "sides": 3, "radius": 12.0, "color": Color(0.82, 0.84, 0.9),  "hp_m": 0.4,  "spd_m": 1.6  },
 	"fracture":   { "sides": 5, "radius": 18.0, "color": Color(0.9,  0.9,  0.86), "hp_m": 2.2,  "spd_m": 0.85 },
-	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 8.0,  "spd_m": 0.4  },
+	# 2026-08-31：「強くなればなるほど遅くなるのはありだけど、さすがに遅すぎて余裕で逃げ切れる」との指摘。
+	# ENEMY_SPEED_BASE=45換算でspd_m0.4だと実速度18（プレイヤー130の14%）しかなく、本来「本当の強敵」の
+	# はずが常時ほぼ静止していた。0.6（実速度27、21%）まで引き上げ、それでも群れの中では圧倒的に遅い
+	# 「重戦車」の立ち位置は保ったまま、少しは追い詰められる速度にした
+	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 8.0,  "spd_m": 0.6  },
 }
 
 # 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
@@ -125,15 +129,19 @@ const STAGE_TIMELINES := {
 	# 確認済みのためそのタイミング・規模は据え置き、t=120以降の中盤〜終盤だけ間隔を詰めて敵構成も
 	# 前倒しでタフにした。終盤のヴォイドマーク包囲（t=235）は8体と手薄で「簡単に抜け出せる」原因の
 	# 一つだったため14体に増量（`_spawn_ring_enemies`の半径縮小と合わせて隙間を埋める）
+	# 2026-08-31続き：それでも「120秒あたりから殲滅されてる、弱いかも」との指摘。t=210まで
+	# ヴォイドマークが一切混ざらず雑魚（シャード/フラクチャー）だけだったため、プレイヤー側の
+	# 火力成長に追いつけていなかったと判断。t=120からヴォイドマークを少量ずつ混ぜ始め、
+	# 谷を挟まず段階的に本当の強敵の比率を上げていく形に変更
 	1: {
 		"segments": [
 			{ "t": 0.0,   "interval": 1.4, "count": 1, "mix": { "shard": 1.0 } },
 			{ "t": 40.0,  "interval": 2.0, "count": 1, "mix": { "shard": 1.0 } },
 			{ "t": 55.0,  "interval": 0.9, "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
-			{ "t": 120.0, "interval": 1.5, "count": 1, "mix": { "shard": 0.6,  "fracture": 0.4 } },
-			{ "t": 140.0, "interval": 0.65,"count": 2, "mix": { "shard": 0.45, "fracture": 0.55 } },
-			{ "t": 210.0, "interval": 1.4, "count": 1, "mix": { "shard": 0.4,  "fracture": 0.35, "void_mark": 0.25 } },
-			{ "t": 235.0, "interval": 0.4, "count": 2, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
+			{ "t": 120.0, "interval": 1.3, "count": 1, "mix": { "shard": 0.5,  "fracture": 0.45, "void_mark": 0.05 } },
+			{ "t": 140.0, "interval": 0.55,"count": 2, "mix": { "shard": 0.35, "fracture": 0.55, "void_mark": 0.1 } },
+			{ "t": 210.0, "interval": 1.4, "count": 1, "mix": { "shard": 0.3,  "fracture": 0.35, "void_mark": 0.35 } },
+			{ "t": 235.0, "interval": 0.4, "count": 2, "mix": { "shard": 0.2,  "fracture": 0.4,  "void_mark": 0.4 } },
 		],
 		"events": [
 			{ "t": 55.0,  "count": 16, "type": "shard" },
@@ -146,14 +154,14 @@ const STAGE_TIMELINES := {
 			{ "t": 0.0,   "interval": 1.4,  "count": 1, "mix": { "shard": 1.0 } },
 			{ "t": 45.0,  "interval": 1.9,  "count": 1, "mix": { "shard": 1.0 } },
 			{ "t": 60.0,  "interval": 0.9,  "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
-			{ "t": 130.0, "interval": 1.6,  "count": 1, "mix": { "shard": 0.6,  "fracture": 0.4 } },
-			{ "t": 150.0, "interval": 0.7,  "count": 2, "mix": { "shard": 0.45, "fracture": 0.55 } },
-			{ "t": 230.0, "interval": 1.5,  "count": 1, "mix": { "shard": 0.4,  "fracture": 0.4,  "void_mark": 0.2 } },
-			{ "t": 250.0, "interval": 0.55, "count": 2, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
-			{ "t": 350.0, "interval": 1.6,  "count": 1, "mix": { "shard": 0.25, "fracture": 0.4,  "void_mark": 0.35 } },
-			{ "t": 380.0, "interval": 0.5,  "count": 2, "mix": { "shard": 0.2,  "fracture": 0.4,  "void_mark": 0.4 } },
-			{ "t": 480.0, "interval": 1.4,  "count": 1, "mix": { "shard": 0.2,  "fracture": 0.35, "void_mark": 0.45 } },
-			{ "t": 520.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.15, "fracture": 0.35, "void_mark": 0.5 } },
+			{ "t": 130.0, "interval": 1.3,  "count": 1, "mix": { "shard": 0.5,  "fracture": 0.45, "void_mark": 0.05 } },
+			{ "t": 150.0, "interval": 0.6,  "count": 2, "mix": { "shard": 0.35, "fracture": 0.55, "void_mark": 0.1 } },
+			{ "t": 230.0, "interval": 1.5,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
+			{ "t": 250.0, "interval": 0.55, "count": 2, "mix": { "shard": 0.2,  "fracture": 0.4,  "void_mark": 0.4 } },
+			{ "t": 350.0, "interval": 1.6,  "count": 1, "mix": { "shard": 0.2,  "fracture": 0.35, "void_mark": 0.45 } },
+			{ "t": 380.0, "interval": 0.5,  "count": 2, "mix": { "shard": 0.15, "fracture": 0.35, "void_mark": 0.5 } },
+			{ "t": 480.0, "interval": 1.4,  "count": 1, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
+			{ "t": 520.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.1,  "fracture": 0.3,  "void_mark": 0.6 } },
 		],
 		"events": [
 			{ "t": 60.0,  "count": 14, "type": "shard" },
@@ -909,6 +917,17 @@ func _damage_enemy(e: Dictionary, dmg: int, attr: String = "") -> void:
 
 func _update_enemies(delta: float) -> void:
 	var to_remove : Array[int] = []
+	# 2026-08-31：「280秒あたり、大きなウェーブの直前で重くなる」との指摘。敵同士のセパレーションが
+	# 全敵×全敵のO(n²)（MAX_ENEMIES=90なら最大8100回/フレーム）だったため、敵数が多い場面で顕著に
+	# 重くなっていたと判断。近傍セルだけを調べる簡易グリッド分割に変更して実質的な計算量を減らす
+	var sep_grid: Dictionary = {}
+	var sep_cell := 100.0
+	for e in enemies:
+		var cell := Vector2i(int(floor((e["pos"] as Vector2).x / sep_cell)), int(floor((e["pos"] as Vector2).y / sep_cell)))
+		if not sep_grid.has(cell):
+			sep_grid[cell] = []
+		(sep_grid[cell] as Array).append(e)
+
 	for i in range(enemies.size()):
 		var e := enemies[i]
 		e["kb"] = (e["kb"] as Vector2).lerp(Vector2.ZERO, delta * 5.0)
@@ -921,15 +940,21 @@ func _update_enemies(delta: float) -> void:
 		# 2026-08-04：分離が強すぎて敵がプレイヤー周りに均等に薄く広がり、密集が起きない問題を受けて弱めていたが、
 		# 2026-08-10：移動速度を減速したことで密集自体はそのまま起きる見込みのため、重なり対策を元の強さに戻した
 		var sep := Vector2.ZERO
-		for other in enemies:
-			if other == e: continue
-			var diff: Vector2 = (e["pos"] as Vector2) - (other["pos"] as Vector2)
-			var min_d: float  = (e["radius"] as float) + (other["radius"] as float) + 4.0
-			var d: float      = diff.length()
-			if d < min_d and d > 0.5:
-				sep += diff.normalized() * (min_d - d)
-		var dir: Vector2 = (player_pos - (e["pos"] as Vector2)).normalized()
-		e["pos"] = (e["pos"] as Vector2) + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
+		var e_pos: Vector2 = e["pos"] as Vector2
+		var e_cell := Vector2i(int(floor(e_pos.x / sep_cell)), int(floor(e_pos.y / sep_cell)))
+		for nx in range(-1, 2):
+			for ny in range(-1, 2):
+				var ncell := Vector2i(e_cell.x + nx, e_cell.y + ny)
+				if not sep_grid.has(ncell): continue
+				for other in (sep_grid[ncell] as Array):
+					if other == e: continue
+					var diff: Vector2 = e_pos - (other["pos"] as Vector2)
+					var min_d: float  = (e["radius"] as float) + (other["radius"] as float) + 4.0
+					var d: float      = diff.length()
+					if d < min_d and d > 0.5:
+						sep += diff.normalized() * (min_d - d)
+		var dir: Vector2 = (player_pos - e_pos).normalized()
+		e["pos"] = e_pos + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
