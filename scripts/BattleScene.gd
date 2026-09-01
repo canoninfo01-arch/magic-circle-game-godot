@@ -133,6 +133,12 @@ const STAGE_TIMELINES := {
 	# ヴォイドマークが一切混ざらず雑魚（シャード/フラクチャー）だけだったため、プレイヤー側の
 	# 火力成長に追いつけていなかったと判断。t=120からヴォイドマークを少量ずつ混ぜ始め、
 	# 谷を挟まず段階的に本当の強敵の比率を上げていく形に変更
+	# 2026-08-31さらに続き：「終盤は重い敵が多いけど遅い敵とも言える、まだ簡単に逃げられる」との指摘。
+	# ヴォイドマーク比率を上げるほど群れ全体の平均速度が落ち、終盤ほど追いつかれにくくなる矛盾に
+	# 気づいた。対策は2つ：①segmentsの終盤でシャード比率が0.1〜0.2まで潰れていたのを常に0.25〜0.3の
+	# 床を残すよう調整（fracture/void_markで積んでいたタフさは維持）②包囲ウェーブ（events）を単一
+	# type固定からmix対応に変更し、ヴォイドマーク主体の包囲にもシャード/フラクチャーの護衛を混ぜて、
+	# 「山場なのに全員遅い」状態を解消（`_spawn_ring_enemies`のシグネチャもmix対応に変更）
 	1: {
 		"segments": [
 			{ "t": 0.0,   "interval": 1.4, "count": 1, "mix": { "shard": 1.0 } },
@@ -140,13 +146,13 @@ const STAGE_TIMELINES := {
 			{ "t": 55.0,  "interval": 0.9, "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
 			{ "t": 120.0, "interval": 1.3, "count": 1, "mix": { "shard": 0.5,  "fracture": 0.45, "void_mark": 0.05 } },
 			{ "t": 140.0, "interval": 0.55,"count": 2, "mix": { "shard": 0.35, "fracture": 0.55, "void_mark": 0.1 } },
-			{ "t": 210.0, "interval": 1.4, "count": 1, "mix": { "shard": 0.3,  "fracture": 0.35, "void_mark": 0.35 } },
-			{ "t": 235.0, "interval": 0.4, "count": 2, "mix": { "shard": 0.2,  "fracture": 0.4,  "void_mark": 0.4 } },
+			{ "t": 210.0, "interval": 1.4, "count": 1, "mix": { "shard": 0.35, "fracture": 0.3,  "void_mark": 0.35 } },
+			{ "t": 235.0, "interval": 0.4, "count": 2, "mix": { "shard": 0.3,  "fracture": 0.35, "void_mark": 0.35 } },
 		],
 		"events": [
-			{ "t": 55.0,  "count": 16, "type": "shard" },
-			{ "t": 140.0, "count": 18, "type": "fracture" },
-			{ "t": 235.0, "count": 14, "type": "void_mark" },
+			{ "t": 55.0,  "count": 16, "mix": { "shard": 1.0 } },
+			{ "t": 140.0, "count": 18, "mix": { "fracture": 1.0 } },
+			{ "t": 235.0, "count": 14, "mix": { "shard": 0.25, "fracture": 0.25, "void_mark": 0.5 } },
 		],
 	},
 	2: {
@@ -156,19 +162,19 @@ const STAGE_TIMELINES := {
 			{ "t": 60.0,  "interval": 0.9,  "count": 1, "mix": { "shard": 0.7,  "fracture": 0.3 } },
 			{ "t": 130.0, "interval": 1.3,  "count": 1, "mix": { "shard": 0.5,  "fracture": 0.45, "void_mark": 0.05 } },
 			{ "t": 150.0, "interval": 0.6,  "count": 2, "mix": { "shard": 0.35, "fracture": 0.55, "void_mark": 0.1 } },
-			{ "t": 230.0, "interval": 1.5,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
-			{ "t": 250.0, "interval": 0.55, "count": 2, "mix": { "shard": 0.2,  "fracture": 0.4,  "void_mark": 0.4 } },
-			{ "t": 350.0, "interval": 1.6,  "count": 1, "mix": { "shard": 0.2,  "fracture": 0.35, "void_mark": 0.45 } },
-			{ "t": 380.0, "interval": 0.5,  "count": 2, "mix": { "shard": 0.15, "fracture": 0.35, "void_mark": 0.5 } },
-			{ "t": 480.0, "interval": 1.4,  "count": 1, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
-			{ "t": 520.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.1,  "fracture": 0.3,  "void_mark": 0.6 } },
+			{ "t": 230.0, "interval": 1.5,  "count": 1, "mix": { "shard": 0.35, "fracture": 0.35, "void_mark": 0.3 } },
+			{ "t": 250.0, "interval": 0.55, "count": 2, "mix": { "shard": 0.3,  "fracture": 0.35, "void_mark": 0.35 } },
+			{ "t": 350.0, "interval": 1.6,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.3,  "void_mark": 0.4 } },
+			{ "t": 380.0, "interval": 0.5,  "count": 2, "mix": { "shard": 0.28, "fracture": 0.32, "void_mark": 0.4 } },
+			{ "t": 480.0, "interval": 1.4,  "count": 1, "mix": { "shard": 0.28, "fracture": 0.3,  "void_mark": 0.42 } },
+			{ "t": 520.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.28, "fracture": 0.3,  "void_mark": 0.42 } },
 		],
 		"events": [
-			{ "t": 60.0,  "count": 14, "type": "shard" },
-			{ "t": 150.0, "count": 16, "type": "fracture" },
-			{ "t": 250.0, "count": 12, "type": "void_mark" },
-			{ "t": 380.0, "count": 18, "type": "fracture" },
-			{ "t": 520.0, "count": 14, "type": "void_mark" },
+			{ "t": 60.0,  "count": 14, "mix": { "shard": 1.0 } },
+			{ "t": 150.0, "count": 16, "mix": { "fracture": 1.0 } },
+			{ "t": 250.0, "count": 12, "mix": { "shard": 0.25, "fracture": 0.25, "void_mark": 0.5 } },
+			{ "t": 380.0, "count": 18, "mix": { "fracture": 1.0 } },
+			{ "t": 520.0, "count": 14, "mix": { "shard": 0.25, "fracture": 0.25, "void_mark": 0.5 } },
 		],
 	},
 	3: {
@@ -181,23 +187,23 @@ const STAGE_TIMELINES := {
 			{ "t": 220.0, "interval": 1.9,  "count": 1, "mix": { "shard": 0.45, "fracture": 0.35, "void_mark": 0.2 } },
 			{ "t": 250.0, "interval": 0.6,  "count": 2, "mix": { "shard": 0.35, "fracture": 0.4,  "void_mark": 0.25 } },
 			{ "t": 350.0, "interval": 2.0,  "count": 1, "mix": { "shard": 0.3,  "fracture": 0.4,  "void_mark": 0.3 } },
-			{ "t": 380.0, "interval": 0.5,  "count": 3, "mix": { "shard": 0.25, "fracture": 0.35, "void_mark": 0.4 } },
-			{ "t": 500.0, "interval": 1.8,  "count": 1, "mix": { "shard": 0.2,  "fracture": 0.35, "void_mark": 0.45 } },
-			{ "t": 530.0, "interval": 0.45, "count": 3, "mix": { "shard": 0.2,  "fracture": 0.3,  "void_mark": 0.5 } },
-			{ "t": 650.0, "interval": 1.7,  "count": 1, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
-			{ "t": 680.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.15, "fracture": 0.3,  "void_mark": 0.55 } },
-			{ "t": 800.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.1,  "fracture": 0.3,  "void_mark": 0.6 } },
+			{ "t": 380.0, "interval": 0.5,  "count": 3, "mix": { "shard": 0.3,  "fracture": 0.3,  "void_mark": 0.4 } },
+			{ "t": 500.0, "interval": 1.8,  "count": 1, "mix": { "shard": 0.28, "fracture": 0.3,  "void_mark": 0.42 } },
+			{ "t": 530.0, "interval": 0.45, "count": 3, "mix": { "shard": 0.28, "fracture": 0.3,  "void_mark": 0.42 } },
+			{ "t": 650.0, "interval": 1.7,  "count": 1, "mix": { "shard": 0.26, "fracture": 0.3,  "void_mark": 0.44 } },
+			{ "t": 680.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.26, "fracture": 0.3,  "void_mark": 0.44 } },
+			{ "t": 800.0, "interval": 0.4,  "count": 3, "mix": { "shard": 0.25, "fracture": 0.3,  "void_mark": 0.45 } },
 		],
 		"events": [
-			{ "t": 55.0,  "count": 12, "type": "shard" },
-			{ "t": 140.0, "count": 16, "type": "fracture" },
-			{ "t": 250.0, "count": 8,  "type": "void_mark" },
-			{ "t": 380.0, "count": 18, "type": "fracture" },
-			{ "t": 530.0, "count": 10, "type": "void_mark" },
-			{ "t": 680.0, "count": 20, "type": "fracture" },
+			{ "t": 55.0,  "count": 12, "mix": { "shard": 1.0 } },
+			{ "t": 140.0, "count": 16, "mix": { "fracture": 1.0 } },
+			{ "t": 250.0, "count": 8,  "mix": { "shard": 0.25, "fracture": 0.25, "void_mark": 0.5 } },
+			{ "t": 380.0, "count": 18, "mix": { "fracture": 1.0 } },
+			{ "t": 530.0, "count": 10, "mix": { "shard": 0.25, "fracture": 0.25, "void_mark": 0.5 } },
+			{ "t": 680.0, "count": 20, "mix": { "fracture": 1.0 } },
 		],
 		# エンドレス（ステージ4）は900秒（このテーブル終端）を過ぎたら以降ここに切り替わる
-		"loop_event": { "period": 100.0, "count": 10, "types": ["fracture", "void_mark"] },
+		"loop_event": { "period": 100.0, "count": 10, "mix": { "shard": 0.2, "fracture": 0.4, "void_mark": 0.4 } },
 	},
 }
 
@@ -773,16 +779,15 @@ func _spawn_enemies(delta: float) -> void:
 		var ev: Dictionary = events[next_event_idx] as Dictionary
 		if elapsed_time >= (ev["t"] as float):
 			wave_count += 1
-			_spawn_ring_enemies(ev["count"] as int, ev["type"] as String)
+			_spawn_ring_enemies(ev["count"] as int, ev.get("mix", { "shard": 1.0 }) as Dictionary)
 			_show_wave_flash(wave_count)
 			next_event_idx += 1
 	else:
 		var loop_event: Dictionary = timeline.get("loop_event", {}) as Dictionary
 		if not loop_event.is_empty() and elapsed_time >= next_loop_event_time:
-			var types: Array = loop_event.get("types", ["shard"]) as Array
-			var etype: String = types[randi() % types.size()] as String
+			var loop_mix: Dictionary = loop_event.get("mix", { "shard": 1.0 }) as Dictionary
 			wave_count += 1
-			_spawn_ring_enemies(loop_event.get("count", 8) as int, etype)
+			_spawn_ring_enemies(loop_event.get("count", 8) as int, loop_mix)
 			_show_wave_flash(wave_count)
 			next_loop_event_time = elapsed_time + (loop_event.get("period", 90.0) as float)
 
@@ -821,7 +826,9 @@ func _pick_type_from_mix(mix: Dictionary) -> String:
 	return "shard"
 
 # ウェーブ専用：プレイヤーを中心に画面外径で均等配置し、四方から一斉に迫る「包囲」を作る
-func _spawn_ring_enemies(count: int, forced_type: String) -> void:
+# 2026-08-31：単一typeからmix対応に変更。ヴォイドマーク主体の包囲だけだと「山場なのに全員遅くて
+# 逃げ切れる」との指摘を受け、シャード/フラクチャーの護衛を混ぜられるようにした
+func _spawn_ring_enemies(count: int, mix: Dictionary) -> void:
 	if count <= 0: return
 	# 2026-08-31：「包囲ウェーブが簡単に抜け出せる」との指摘。半径80のマージンだと敵同士の間隔が
 	# 広く（特に敵数の少ないヴォイドマーク包囲は隙間が394pxにもなっていた）、湧いた直後にすり抜けられて
@@ -832,7 +839,7 @@ func _spawn_ring_enemies(count: int, forced_type: String) -> void:
 		if enemies.size() >= MAX_ENEMIES: break
 		var a := start_a + (float(i) / float(count)) * TAU + randf_range(-0.12, 0.12)
 		var pos := player_pos + Vector2(cos(a), sin(a)) * radius
-		_spawn_one_enemy(forced_type, pos)
+		_spawn_one_enemy(_pick_type_from_mix(mix), pos)
 
 func _spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 	var pos: Vector2  = forced_pos if forced_pos != null else _random_edge_pos()
