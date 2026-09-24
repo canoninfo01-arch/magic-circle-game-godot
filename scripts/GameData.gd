@@ -83,6 +83,8 @@ func clear_stage(stage: int) -> void:
 	_save()
 
 func is_stage_unlocked(stage: int) -> bool:
+	# 2026-09-24：デバッグモード（?debug=1）では全ステージ即選択可能にする。セーブ自体は書き換えない
+	if DebugMode.enabled: return true
 	return stage <= unlocked_stage
 
 # 2026-09-24追加：テストプレイで「毎回シークレットモードで新規プレイ状態を作り直す」のが

@@ -62,6 +62,10 @@ var _enemy_shader_mat: ShaderMaterial
 var _enemy_spawner: EnemySpawner
 var _weapon_system: WeaponSystem
 
+# デバッグモード用（2026-09-24追加）
+const DEBUG_TIME_SCALES := [1.0, 2.0, 4.0]
+var _debug_time_scale_idx := 0
+
 const FRAGMENT_THRESHOLD_BASE := _Data.FRAGMENT_THRESHOLD_BASE
 const FRAGMENT_THRESHOLD_GROWTH := _Data.FRAGMENT_THRESHOLD_GROWTH
 const HEAL_ITEM_BASE_CHANCE := _Data.HEAL_ITEM_BASE_CHANCE
@@ -343,6 +347,56 @@ func _build_ui() -> void:
 	pause_btn.add_theme_font_size_override("font_size", 16)
 	ui_layer.add_child(pause_btn)
 
+	if DebugMode.enabled:
+		_build_debug_panel(ui_layer)
+
+# デバッグモード（?debug=1）専用パネル（2026-09-24追加）。時間倍速と、追跡者・詠唱者の
+# 強制湧きで、確率任せにせずリング・弾の見た目や挙動をその場で確認できるようにする
+func _build_debug_panel(layer: CanvasLayer) -> void:
+	var btn_w := 150.0
+	var btn_h := 30.0
+	var y := 84.0
+
+	var speed_btn := Button.new()
+	speed_btn.text = "[DEBUG] 速度 x1"
+	speed_btn.size = Vector2(btn_w, btn_h)
+	speed_btn.position = Vector2(W - btn_w - 6, y)
+	speed_btn.add_theme_font_size_override("font_size", 12)
+	speed_btn.modulate = Color(1.0, 0.75, 0.75)
+	if jp_font:
+		speed_btn.add_theme_font_override("font", jp_font)
+	speed_btn.pressed.connect(func():
+		_debug_time_scale_idx = (_debug_time_scale_idx + 1) % DEBUG_TIME_SCALES.size()
+		var ts: float = DEBUG_TIME_SCALES[_debug_time_scale_idx]
+		Engine.time_scale = ts
+		speed_btn.text = "[DEBUG] 速度 x%d" % int(ts)
+	)
+	layer.add_child(speed_btn)
+	y += btn_h + 4
+
+	var hunter_btn := Button.new()
+	hunter_btn.text = "[DEBUG] 追跡者を湧かせる"
+	hunter_btn.size = Vector2(btn_w, btn_h)
+	hunter_btn.position = Vector2(W - btn_w - 6, y)
+	hunter_btn.add_theme_font_size_override("font_size", 11)
+	hunter_btn.modulate = Color(1.0, 0.75, 0.75)
+	if jp_font:
+		hunter_btn.add_theme_font_override("font", jp_font)
+	hunter_btn.pressed.connect(func(): _enemy_spawner.debug_force_spawn("hunter"))
+	layer.add_child(hunter_btn)
+	y += btn_h + 4
+
+	var caster_btn := Button.new()
+	caster_btn.text = "[DEBUG] 詠唱者を湧かせる"
+	caster_btn.size = Vector2(btn_w, btn_h)
+	caster_btn.position = Vector2(W - btn_w - 6, y)
+	caster_btn.add_theme_font_size_override("font_size", 11)
+	caster_btn.modulate = Color(1.0, 0.75, 0.75)
+	if jp_font:
+		caster_btn.add_theme_font_override("font", jp_font)
+	caster_btn.pressed.connect(func(): _enemy_spawner.debug_force_spawn("caster"))
+	layer.add_child(caster_btn)
+
 func _make_glow_panel(pos: Vector2, size: Vector2, border_col: Color) -> Panel:
 	var panel := Panel.new()
 	panel.position = pos
@@ -485,6 +539,22 @@ func _build_draw_layer() -> void:
 	confirm_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	confirm_btn.pressed.connect(_evaluate_lap)
 	draw_layer.add_child(confirm_btn)
+
+	# 2026-09-24追加：デバッグモード（?debug=1）専用。図形を描くジェスチャーは自動テストで
+	# 再現できないため、押すとPERFECT相当の結果で即座に召喚フェーズへ進めるショートカット
+	if DebugMode.enabled:
+		var debug_skip_btn := Button.new()
+		debug_skip_btn.text = "[DEBUG] 即召喚(PERFECT)"
+		debug_skip_btn.size = Vector2(200, 40)
+		debug_skip_btn.position = Vector2(W * 0.5 - 100, H - 60)
+		debug_skip_btn.add_theme_font_size_override("font_size", 13)
+		debug_skip_btn.modulate = Color(1.0, 0.7, 0.7)
+		debug_skip_btn.pressed.connect(func():
+			coating_power = 100
+			coating_count = 5
+			draw_timer = 0.0
+		)
+		draw_layer.add_child(debug_skip_btn)
 
 	if jp_font:
 		_apply_font(draw_layer, jp_font)
@@ -1880,14 +1950,20 @@ func _open_pause_menu() -> void:
 	restart_btn.text = "リスタート"
 	restart_btn.size = Vector2(180, 56)
 	restart_btn.position = Vector2(W * 0.5 - 90, H * 0.51)
-	restart_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	restart_btn.pressed.connect(func():
+		Engine.time_scale = 1.0
+		get_tree().reload_current_scene()
+	)
 	pause_layer.add_child(restart_btn)
 
 	var stage_select_btn := Button.new()
 	stage_select_btn.text = "ステージ選択へ"
 	stage_select_btn.size = Vector2(180, 56)
 	stage_select_btn.position = Vector2(W * 0.5 - 90, H * 0.60)
-	stage_select_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn"))
+	stage_select_btn.pressed.connect(func():
+		Engine.time_scale = 1.0
+		get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn")
+	)
 	pause_layer.add_child(stage_select_btn)
 
 	for btn in [resume_btn, restart_btn, stage_select_btn]:
@@ -1912,6 +1988,7 @@ func _award_zankou(stage_cleared: bool) -> int:
 
 func _game_over() -> void:
 	game_state = "game_over"
+	Engine.time_scale = 1.0  # 2026-09-24：デバッグの倍速指定が他画面まで残らないようにする
 	Sfx.stop_bgm()
 	var is_new := elapsed_time > best_time
 	_save_best(elapsed_time)
@@ -1950,6 +2027,7 @@ func _game_over() -> void:
 const STAGE_CLEAR_REWARD_TEXT := _Data.STAGE_CLEAR_REWARD_TEXT
 func _stage_clear() -> void:
 	game_state = "stage_clear"
+	Engine.time_scale = 1.0  # 2026-09-24：デバッグの倍速指定が他画面まで残らないようにする
 	Sfx.stop_bgm()
 	GameData.clear_stage(current_stage)
 	_save_best(elapsed_time)

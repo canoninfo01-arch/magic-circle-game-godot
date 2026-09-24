@@ -153,6 +153,19 @@ func spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 
 	battle.enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite, "etype": etype, "hunter": is_hunter, "cast_cd": randf_range(0.6, _Data.CASTER_CAST_INTERVAL), "casting": false })
 
+# デバッグ専用（2026-09-24追加）：確率任せにせず、追跡者・詠唱者をプレイヤーの目の前に確定で
+# 湧かせて見た目・挙動をその場で確認するためのショートカット。DebugMode.enabled時のみ呼ばれる想定
+func debug_force_spawn(kind: String) -> void:
+	var pos: Vector2 = battle.player_pos + Vector2(0, -160)
+	if kind == "caster":
+		spawn_one_enemy("caster", pos)
+	else:
+		spawn_one_enemy("shard", pos)
+		var e: Dictionary = battle.enemies[battle.enemies.size() - 1]
+		if not (e.get("hunter", false) as bool):
+			e["hunter"] = true
+			attach_hunter_ring(e["node"] as Node2D, e["radius"] as float)
+
 func random_edge_pos() -> Vector2:
 	var hw := _Data.W * 0.5 + 60.0
 	var hh := _Data.H * 0.5 + 60.0

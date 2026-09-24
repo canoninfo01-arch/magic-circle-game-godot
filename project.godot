@@ -33,6 +33,7 @@ pointing/emulate_touch_from_mouse=true
 
 GameData="*res://scripts/GameData.gd"
 Sfx="*res://scripts/Sfx.gd"
+DebugMode="*res://scripts/DebugMode.gd"
 
 [rendering]
 
