@@ -86,6 +86,10 @@ const ENEMY_TYPES := {
 	# はずが常時ほぼ静止していた。0.6（実速度27、21%）まで引き上げ、それでも群れの中では圧倒的に遅い
 	# 「重戦車」の立ち位置は保ったまま、少しは追い詰められる速度にした
 	"void_mark":  { "sides": 6, "radius": 26.0, "color": Color(0.95, 0.95, 1.0),  "hp_m": 8.0,  "spd_m": 0.6  },
+	# 2026-09-24追加：「詠唱者」。既存3種は全員が直線追尾で近づいてくるだけなので、間合いを取って
+	# 遠距離から撃つ動きの違うタイプを追加した（詳細はCASTER_*定数・EnemySpawner.gd参照）。
+	# 新規ドット絵は使わず、フラクチャーの絵を専用の色調・リングで流用する
+	"caster":     { "sides": 5, "radius": 16.0, "color": Color(0.55, 0.8, 1.0),   "hp_m": 1.3,  "spd_m": 0.9  },
 }
 
 # 天敵（2026-08-04追加）：既存3種のどれにでも乗る属性ウォード。本体色は変えず、周りにウォード色のリングを重ねて
@@ -113,6 +117,29 @@ const ELITE_VARIANTS := {
 const ELITE_CHANCE      := 0.11  # ステージ1・2（2026-08-25：120秒プレイして変種が少なすぎるとの指摘で0.05→0.08 / 2026-08-31：「もう少し強くして」との指摘で0.08→0.11）
 const ELITE_CHANCE_STAGE3 := 0.1  # ステージ3・エンドレスは頻度を増やす
 const ELITE_MIN_TIME    := 45.0  # 開幕直後の無防備な時間帯には出さない
+
+# 追跡者（2026-09-24追加）：「常に同じ半径でぐるぐる回れば安全」という、直線追尾しかしない敵に
+# 対する定石を崩すための挙動違い。プレイヤーの現在地ではなく、移動方向を先読みした地点へ向かって
+# 進む。エリート・天敵ウォードと同じく既存3種のどれにでも乗せる（新規ドット絵は使わない）。
+# ELITE_MIN_TIMEと違い開幕直後から出す——単調な周回はむしろ早い段階の「稼ぎ」局面で起きやすいため
+const HUNTER_CHANCE       := 0.15  # ステージ1・2
+const HUNTER_CHANCE_STAGE3 := 0.22  # ステージ3・エンドレスは頻度を増やす
+const HUNTER_LEAD_TIME    := 0.7   # 秒。プレイヤーの移動方向にこの秒数分先読みした地点を狙う
+const HUNTER_RING_COLOR   := Color(0.75, 0.35, 1.0)  # 紫。エリート(赤/黄)・天敵ウォードの色とも被らない
+
+# 詠唱者（2026-09-24追加）：敵の「種類」自体を増やす一手。既存3種は挙動が全員同じ（直線追尾）なので、
+# 間合いを取って遠距離から撃つ、動き自体が違うタイプを追加した。STAGE_TIMELINESのmix比率は
+# 一切変更せず、独立抽選での差し替えとして混ぜる（EnemySpawner.gd参照）
+const CASTER_CHANCE          := 0.08  # ステージ2（ステージ1では出さない＝新要素は導入済みの土台の上に足す）
+const CASTER_CHANCE_STAGE3   := 0.14  # ステージ3・エンドレスは頻度を増やす
+const CASTER_PREFERRED_RANGE := 220.0  # この距離を保とうとする
+const CASTER_RANGE_SLACK     := 30.0   # ±この幅は近づき/離れもせず静止
+const CASTER_CAST_INTERVAL   := 2.6    # 秒。詠唱（発射）の間隔
+const CASTER_TELEGRAPH       := 0.4    # 秒。発射前に光って予告する時間
+const CASTER_BOLT_SPEED      := 220.0
+const CASTER_BOLT_DMG        := 1      # プレイヤーへの直撃ダメージ（接触ダメージのENEMY_DAMAGEと同値）
+const CASTER_BOLT_R          := 7.0
+const CASTER_RING_COLOR      := Color(0.55, 0.85, 1.0)  # 水色。「遠距離＝冷たい色」で直感的に紐付ける
 
 # ステージ毎のスポーンタイムライン（2026-08-18：数式ベースの湧きペース＋ランダム敵種選択を全面的に作り直した）。
 # 「敵の湧きをどう制御してるか」という相談から、VSが採用する“ステージごとの譜面”方式に寄せた設計：
@@ -217,11 +244,13 @@ const ENEMY_SPRITE_TEXTURES := {
 	"shard":     ENEMY_TEX_SHARD,
 	"fracture":  ENEMY_TEX_FRACTURE,
 	"void_mark": ENEMY_TEX_VOID_MARK,
+	"caster":    ENEMY_TEX_FRACTURE,  # 2026-09-24：新規ドット絵は使わず流用。見分けはリング（CASTER_RING_COLOR）で付ける
 }
 const ENEMY_SPRITE_CONTENT_RATIO := {
 	"shard":     0.70,
 	"fracture":  0.80,
 	"void_mark": 0.83,
+	"caster":    0.80,
 }
 # 2026-08-04：敵の彩度を落として白銀寄りにするシェーダー。全敵スプライトで共有する1つのマテリアルを使い回す
 const ENEMY_DESATURATE_SHADER := preload("res://shaders/enemy_desaturate.gdshader")

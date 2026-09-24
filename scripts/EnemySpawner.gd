@@ -11,6 +11,11 @@ const _Data = preload("res://scripts/BattleData.gd")
 
 var battle
 
+# 詠唱者（caster）が放つ遠距離弾。プレイヤーの弾・仲間の弾（battle.bullets）とは別枠で
+# EnemySpawner自身が保持・更新する（既存のbulletsは「敵にダメージを与える」前提で
+# 各所から参照されているため、プレイヤーにダメージを与える弾を混ぜず独立させた）
+var enemy_bolts: Array[Dictionary] = []
+
 func _init(battle_scene) -> void:
 	battle = battle_scene
 
@@ -90,6 +95,12 @@ func spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 	# 2026-08-18：敵種の抽選はSTAGE_TIMELINESの区間ごとのmixに一本化したため、呼び出し元は
 	# 常に解決済みの型を渡す想定。空文字が来た場合のみ雑魚のシャードにフォールバックする
 	var etype: String = forced_type if forced_type != "" else "shard"
+	# 2026-09-24追加：「詠唱者」への差し替え。STAGE_TIMELINESのmix比率は一切変えず独立抽選にすることで、
+	# 既に何度も調整してきた既存3種のバランスを崩さずに新しい敵タイプを混ぜられるようにした
+	if battle.current_stage >= 2:
+		var caster_chance: float = _Data.CASTER_CHANCE_STAGE3 if battle.current_stage >= 3 else _Data.CASTER_CHANCE
+		if randf() < caster_chance:
+			etype = "caster"
 	var edata: Dictionary = _Data.ENEMY_TYPES[etype]
 	# 2026-08-10：HP・速度の時間経過スケーリングを廃止（見た目が変わらないまま個体が強くなるのは
 	# プレイヤーに伝わらないとの指摘）。難易度上昇は「数が増える」「新しい敵タイプが混ざる」に一本化
@@ -131,7 +142,16 @@ func spawn_one_enemy(forced_type: String = "", forced_pos = null) -> void:
 			ward = _Data.PREDATOR_ATTRS[randi() % _Data.PREDATOR_ATTRS.size()]
 			attach_predator_ring(node, r, ward)
 
-	battle.enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite, "etype": etype })
+	# 2026-09-24追加：先読みして進む「追跡者」。エリート・天敵ウォードとは独立に判定し、両方乗ることもある
+	var hunter_chance: float = _Data.HUNTER_CHANCE_STAGE3 if battle.current_stage >= 3 else _Data.HUNTER_CHANCE
+	var is_hunter := randf() < hunter_chance
+	if is_hunter:
+		attach_hunter_ring(node, r)
+
+	if etype == "caster":
+		attach_caster_ring(node, r)
+
+	battle.enemies.append({ "hp": hp, "max_hp": hp, "pos": pos, "speed": spd, "radius": r, "node": node, "kb": Vector2.ZERO, "color": edata["color"] as Color, "flash": 0.0, "ward": ward, "elite": is_elite, "etype": etype, "hunter": is_hunter, "cast_cd": randf_range(0.6, _Data.CASTER_CAST_INTERVAL), "casting": false })
 
 func random_edge_pos() -> Vector2:
 	var hw := _Data.W * 0.5 + 60.0
@@ -153,6 +173,32 @@ func attach_elite_ring(parent: Node2D, r: float, ring_color: Color) -> void:
 	var tw := ring.create_tween()
 	tw.set_loops()
 	tw.tween_property(ring, "rotation", TAU, 2.2).from(0.0)
+
+# 追跡者のリング表示（2026-09-24追加）。エリート・天敵ウォードと見分けがつくよう紫・逆回転にした
+func attach_hunter_ring(parent: Node2D, r: float) -> void:
+	var ring := Line2D.new()
+	ring.width = 2.2
+	ring.default_color = _Data.HUNTER_RING_COLOR
+	for p in battle._make_ring_points(r * 1.65, 1.0):
+		ring.add_point(p)
+	parent.add_child(ring)
+	var tw := ring.create_tween()
+	tw.set_loops()
+	tw.tween_property(ring, "rotation", -TAU, 2.6).from(0.0)
+
+# 詠唱者のリング表示（2026-09-24追加）。他のリングは回転するが、こちらは「様子を見ている」
+# 感触を出すため脈動（拡大縮小）にして視覚言語を分けた
+func attach_caster_ring(parent: Node2D, r: float) -> void:
+	var ring := Line2D.new()
+	ring.width = 2.4
+	ring.default_color = _Data.CASTER_RING_COLOR
+	for p in battle._make_ring_points(r * 1.5, 1.0):
+		ring.add_point(p)
+	parent.add_child(ring)
+	var tw := ring.create_tween()
+	tw.set_loops()
+	tw.tween_property(ring, "scale", Vector2.ONE * 1.15, 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(ring, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
 
 # 天敵ウォードのリング表示（味方の_attach_sigil_ringと同じ発想。本体色は変えない）
 func attach_predator_ring(parent: Node2D, r: float, ward: String) -> void:
@@ -213,8 +259,39 @@ func update_enemies(delta: float) -> void:
 					var d: float      = diff.length()
 					if d < min_d and d > 0.5:
 						sep += diff.normalized() * (min_d - d)
-		var dir: Vector2 = (battle.player_pos - e_pos).normalized()
-		e["pos"] = e_pos + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
+		var etype: String = e.get("etype", "shard") as String
+		if etype == "caster":
+			# 2026-09-24追加：「詠唱者」は間合いを取る。近すぎれば離れ、遠すぎれば詰めるだけで、
+			# 直線追尾の他の敵と違って周回しているだけでは安全になれない（距離を保って撃ってくる）
+			var to_player: Vector2 = battle.player_pos - e_pos
+			var dist_to_player := to_player.length()
+			var move_dir := Vector2.ZERO
+			if dist_to_player > _Data.CASTER_PREFERRED_RANGE + _Data.CASTER_RANGE_SLACK:
+				move_dir = to_player.normalized()
+			elif dist_to_player < _Data.CASTER_PREFERRED_RANGE - _Data.CASTER_RANGE_SLACK:
+				move_dir = -to_player.normalized()
+			e["pos"] = e_pos + (move_dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
+
+			# 詠唱タイマー：発射直前だけ光らせて（テレグラフ）から遠距離弾を撃つ
+			e["cast_cd"] = (e["cast_cd"] as float) - delta
+			if not (e.get("casting", false) as bool) and (e["cast_cd"] as float) <= _Data.CASTER_TELEGRAPH:
+				e["casting"] = true
+				(e["node"] as Node2D).modulate = Color(1.5, 1.5, 2.2)
+			if (e["cast_cd"] as float) <= 0.0:
+				fire_caster_bolt(e)
+				e["casting"] = false
+				(e["node"] as Node2D).modulate = Color.WHITE
+				e["cast_cd"] = _Data.CASTER_CAST_INTERVAL
+		else:
+			# 2026-09-24追加：「追跡者」は現在地ではなく、移動方向を先読みした地点を狙う。プレイヤーが
+			# 一定方向に走り続ける限り追いつかれる（＝同じ半径をぐるぐる回るだけでは避けられない）ため、
+			# 直線追尾しかしない他の敵とは違う「詰めてくる」感触になる
+			var target_pos: Vector2 = battle.player_pos
+			if e.get("hunter", false):
+				var player_speed: float = _Data.PLAYER_SPEED * (battle.weapon_stats["move_speed"] as float)
+				target_pos = battle.player_pos + (battle.joy_vec as Vector2) * player_speed * _Data.HUNTER_LEAD_TIME
+			var dir: Vector2 = (target_pos - e_pos).normalized()
+			e["pos"] = e_pos + (dir * (e["speed"] as float) + sep * 3.0) * delta + (e["kb"] as Vector2) * delta
 		e["node"].position = e["pos"] as Vector2
 
 		# プレイヤーとの衝突
@@ -245,3 +322,42 @@ func update_enemies(delta: float) -> void:
 
 	for i in range(to_remove.size() - 1, -1, -1):
 		battle.enemies.remove_at(to_remove[i])
+
+	update_enemy_bolts(delta)
+
+# 詠唱者が放つ遠距離弾を1発生成する（2026-09-24追加）
+func fire_caster_bolt(e: Dictionary) -> void:
+	var from: Vector2 = e["pos"] as Vector2
+	var dir: Vector2 = (battle.player_pos - from).normalized()
+	var node := Polygon2D.new()
+	node.polygon = battle._make_star_pts(4, _Data.CASTER_BOLT_R, 0.35)
+	node.color = _Data.CASTER_RING_COLOR
+	node.position = from
+	battle.add_child(node)
+	enemy_bolts.append({ "pos": from, "dir": dir, "node": node, "life": 3.0 })
+
+# 詠唱者の遠距離弾の移動・プレイヤーへの命中判定（2026-09-24追加）。プレイヤーへダメージを与える
+# 弾のため、敵にダメージを与える前提のbattle.bulletsとは別枠でEnemySpawnerが保持・更新する
+func update_enemy_bolts(delta: float) -> void:
+	var to_remove: Array[int] = []
+	for i in range(enemy_bolts.size()):
+		var b: Dictionary = enemy_bolts[i]
+		b["pos"] = (b["pos"] as Vector2) + (b["dir"] as Vector2) * _Data.CASTER_BOLT_SPEED * delta
+		b["life"] = (b["life"] as float) - delta
+		(b["node"] as Node2D).position = b["pos"] as Vector2
+		if (b["pos"] as Vector2).distance_to(battle.player_pos) < _Data.PLAYER_R + _Data.CASTER_BOLT_R:
+			(b["node"] as Node2D).queue_free()
+			to_remove.append(i)
+			battle.player_hp -= _Data.CASTER_BOLT_DMG
+			battle.shake_power = maxf(battle.shake_power, 10.0)
+			Sfx.play_damage()
+			if battle.player_hp <= 0:
+				Sfx.play_game_over()
+				battle._game_over()
+				return
+			continue
+		if (b["life"] as float) <= 0.0:
+			(b["node"] as Node2D).queue_free()
+			to_remove.append(i)
+	for i in range(to_remove.size() - 1, -1, -1):
+		enemy_bolts.remove_at(to_remove[i])
