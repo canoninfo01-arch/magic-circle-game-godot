@@ -67,6 +67,28 @@ func _build_ui() -> void:
 	zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
 	layer.add_child(zankou_lbl)
 
+	# 2026-09-24追加：テストプレイ用に、セーブ（残光・紋章解放・ステージ解放・最高記録）を
+	# その場でリセットできるボタン。普段は目立たない小さいテキストリンクにしてある
+	var reset_btn := Button.new()
+	reset_btn.text = "セーブをリセット"
+	reset_btn.flat = true
+	reset_btn.position = Vector2(12, 34)
+	reset_btn.size = Vector2(120, 22)
+	if jp_font:
+		reset_btn.add_theme_font_override("font", jp_font)
+	reset_btn.add_theme_font_size_override("font_size", 11)
+	reset_btn.add_theme_color_override("font_color", Color(0.45, 0.45, 0.52))
+	reset_btn.add_theme_color_override("font_hover_color", Color(0.85, 0.5, 0.5))
+	reset_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	reset_btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	reset_btn.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
+	reset_btn.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
+	reset_btn.pressed.connect(func():
+		Sfx.play_tap()
+		_open_reset_confirm()
+	)
+	layer.add_child(reset_btn)
+
 	var upgrade_btn := Button.new()
 	upgrade_btn.text = "強化"
 	upgrade_btn.size = Vector2(70, 34)
@@ -245,6 +267,61 @@ func _refresh_attr_chips(attr: String) -> void:
 		chip.add_theme_stylebox_override("hover", sb)
 		chip.add_theme_stylebox_override("pressed", sb)
 		chip.add_theme_stylebox_override("disabled", sb)
+
+func _open_reset_confirm() -> void:
+	var confirm_layer := CanvasLayer.new()
+	confirm_layer.layer = 20
+	add_child(confirm_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.85)
+	dim.size = Vector2(W, H)
+	confirm_layer.add_child(dim)
+
+	var title := _make_centered_label("セーブをリセットしますか？", 20, H * 0.40, 34)
+	title.add_theme_color_override("font_color", Color(1.0, 0.7, 0.7))
+	confirm_layer.add_child(title)
+
+	var desc := _make_centered_label("残光・紋章解放・ステージ解放・最高記録が\n全て消えます（元に戻せません）", 13, H * 0.40 + 40, 46)
+	desc.add_theme_color_override("font_color", Color(0.72, 0.66, 0.66))
+	confirm_layer.add_child(desc)
+
+	var confirm_btn := Button.new()
+	confirm_btn.text = "リセットする"
+	confirm_btn.size = Vector2(180, 52)
+	confirm_btn.position = Vector2(W * 0.5 - 90, H * 0.40 + 100)
+	if jp_font:
+		confirm_btn.add_theme_font_override("font", jp_font)
+	confirm_btn.add_theme_font_size_override("font_size", 17)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.5, 0.15, 0.15, 0.9)
+	sb.set_corner_radius_all(12)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1.0, 0.5, 0.5)
+	confirm_btn.add_theme_stylebox_override("normal", sb)
+	confirm_btn.add_theme_stylebox_override("hover", sb)
+	confirm_btn.add_theme_stylebox_override("pressed", sb)
+	confirm_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	confirm_btn.pressed.connect(func():
+		Sfx.play_tap()
+		GameData.reset_save()
+		get_tree().reload_current_scene()
+	)
+	confirm_layer.add_child(confirm_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "キャンセル"
+	cancel_btn.size = Vector2(180, 46)
+	cancel_btn.position = Vector2(W * 0.5 - 90, H * 0.40 + 164)
+	if jp_font:
+		cancel_btn.add_theme_font_override("font", jp_font)
+	cancel_btn.add_theme_font_size_override("font_size", 15)
+	cancel_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	cancel_btn.pressed.connect(func():
+		Sfx.play_tap()
+		confirm_layer.queue_free()
+	)
+	confirm_layer.add_child(cancel_btn)
 
 func _open_upgrade_panel() -> void:
 	upgrade_layer = CanvasLayer.new()

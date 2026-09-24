@@ -85,6 +85,21 @@ func clear_stage(stage: int) -> void:
 func is_stage_unlocked(stage: int) -> bool:
 	return stage <= unlocked_stage
 
+# 2026-09-24追加：テストプレイで「毎回シークレットモードで新規プレイ状態を作り直す」のが
+# 手間だったため、セーブ（残光・紋章解放・ステージ解放・最高記録）を明示的に消せるようにした。
+# best_timeはBattleScene.gd側が同じsave.cfgの[score]セクションに書くため、ファイル自体を
+# 削除することで両方まとめてリセットする
+func reset_save() -> void:
+	collected_ids = []
+	equipped = {}
+	unlocked_stage = 1
+	selected_stage = 1
+	zankou = 0
+	upgrades = { "hp": 0, "atk": 0, "spd": 0, "atk_speed": 0, "draw_time": 0 }
+	var dir := DirAccess.open("user://")
+	if dir and dir.file_exists("save.cfg"):
+		dir.remove("save.cfg")
+
 func _load() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://save.cfg") == OK:
