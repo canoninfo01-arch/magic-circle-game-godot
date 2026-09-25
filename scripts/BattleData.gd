@@ -132,7 +132,9 @@ const HUNTER_RING_COLOR   := Color(0.75, 0.35, 1.0)  # 紫。エリート(赤/�
 # 一切変更せず、独立抽選での差し替えとして混ぜる（EnemySpawner.gd参照）
 const CASTER_CHANCE          := 0.08  # ステージ2（ステージ1では出さない＝新要素は導入済みの土台の上に足す）
 const CASTER_CHANCE_STAGE3   := 0.14  # ステージ3・エンドレスは頻度を増やす
-const CASTER_PREFERRED_RANGE := 220.0  # この距離を保とうとする
+# 2026-09-25：画面幅W=390（半幅195px）に対し220pxは真横方向で画面端を超える距離だった
+# （「遠すぎる、画面から出ちゃう」との指摘）。半幅に収まる余裕を持たせて160に縮小
+const CASTER_PREFERRED_RANGE := 160.0  # この距離を保とうとする
 const CASTER_RANGE_SLACK     := 30.0   # ±この幅は近づき/離れもせず静止
 const CASTER_CAST_INTERVAL   := 2.6    # 秒。詠唱（発射）の間隔
 const CASTER_TELEGRAPH       := 0.4    # 秒。発射前に光って予告する時間
