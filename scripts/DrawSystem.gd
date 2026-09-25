@@ -22,7 +22,7 @@ func start_countdown(attr: String) -> void:
 	layer.layer = 10
 	battle.add_child(layer)
 
-	var lbl := battle._make_label("3", 80, Vector2(battle.W * 0.5 - 30, battle.H * 0.4))
+	var lbl: Label = battle._make_label("3", 80, Vector2(battle.W * 0.5 - 30, battle.H * 0.4))
 	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.6))
 	layer.add_child(lbl)
 
@@ -59,8 +59,8 @@ func start_drawing(suggested_shape: String) -> void:
 	battle.draw_layer.visible = true
 
 func refresh_draw_guide() -> void:
-	var cx := battle.W * 0.5
-	var cy := battle.H * 0.5
+	var cx: float = battle.W * 0.5
+	var cy: float = battle.H * 0.5
 	var sigil_data := _Sigils.get_data(battle.draw_sigil_id)
 	var contour_defs: Array = sigil_data.get("contours", [{"shape": battle.draw_shape, "radius_ratio": 1.0, "weight": 1.0}])
 	var guide_scale: float = sigil_data.get("guide_scale", 1.0)
@@ -135,7 +135,7 @@ func apply_guide_intensity() -> void:
 		battle.guide_glow_2.default_color = battle.guide_glow.default_color
 		battle.guide_glow_2.width = battle.guide_glow.width
 
-	var rune_col := battle.guide_base_color.lerp(Color.WHITE, boost)
+	var rune_col: Color = battle.guide_base_color.lerp(Color.WHITE, boost)
 	var rune_scale := 1.0 + boost * 0.6
 	for mark in battle.guide_rune_marks:
 		mark.color = rune_col
@@ -225,7 +225,7 @@ func evaluate_lap() -> void:
 # 判定色でパッと光らせて「押せた・1周終わった」がその場でわかるようにする
 func flash_confirm_btn(col: Color) -> void:
 	battle.confirm_btn.modulate = Color(col.r * 1.6, col.g * 1.6, col.b * 1.6)
-	var tw := battle.confirm_btn.create_tween()
+	var tw: Tween = battle.confirm_btn.create_tween()
 	tw.tween_property(battle.confirm_btn, "modulate", Color.WHITE, 0.35)
 
 func show_combo_flash(count: int) -> void:
@@ -234,7 +234,7 @@ func show_combo_flash(count: int) -> void:
 	var size := 24 + mini(24, (count - 1) * 4)
 	var t := clampf(float(count) / 8.0, 0.0, 1.0)
 	var col := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.85, 0.3), t)
-	var lbl := battle._make_label("%d連続！" % count, size, Vector2(battle.W * 0.5 - 70, battle.H * 0.5 + 22))
+	var lbl: Label = battle._make_label("%d連続！" % count, size, Vector2(battle.W * 0.5 - 70, battle.H * 0.5 + 22))
 	lbl.custom_minimum_size = Vector2(140, size + 10)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.add_theme_color_override("font_color", col)
@@ -261,12 +261,12 @@ func spawn_lap_pulse(col: Color) -> void:
 	tw.chain().tween_callback(ring.queue_free)
 
 func show_lap_flash(label: String, col: Color) -> void:
-	var lbl := battle._make_label(label, 40, Vector2(battle.W * 0.5 - 80, battle.H * 0.5 - 30))
+	var lbl: Label = battle._make_label(label, 40, Vector2(battle.W * 0.5 - 80, battle.H * 0.5 - 30))
 	lbl.add_theme_color_override("font_color", col)
 	if battle.jp_font:
 		lbl.add_theme_font_override("font", battle.jp_font)
 	battle.draw_layer.add_child(lbl)
-	var tween := battle.create_tween()
+	var tween: Tween = battle.create_tween()
 	tween.tween_property(lbl, "modulate:a", 0.0, 0.7)
 	tween.tween_callback(lbl.queue_free)
 
