@@ -5,6 +5,7 @@ const _Sigils = preload("res://scripts/Sigils.gd")
 const _Data = preload("res://scripts/BattleData.gd")
 const _EnemySpawner = preload("res://scripts/EnemySpawner.gd")
 const _WeaponSystem = preload("res://scripts/WeaponSystem.gd")
+const _DrawSystem = preload("res://scripts/DrawSystem.gd")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 定数（実体は BattleData.gd に分離済み。挙動・数値は変更なし、参照名だけ維持するための再エクスポート）
@@ -61,6 +62,7 @@ const ENEMY_DESATURATE_SHADER := _Data.ENEMY_DESATURATE_SHADER
 var _enemy_shader_mat: ShaderMaterial
 var _enemy_spawner: EnemySpawner
 var _weapon_system: WeaponSystem
+var _draw_system: DrawSystem
 
 # デバッグモード用（2026-09-24追加）
 const DEBUG_TIME_SCALES := [1.0, 2.0, 4.0]
@@ -251,6 +253,7 @@ func _ready() -> void:
 	_enemy_shader_mat.shader = ENEMY_DESATURATE_SHADER
 	_enemy_spawner = _EnemySpawner.new(self)
 	_weapon_system = _WeaponSystem.new(self)
+	_draw_system = _DrawSystem.new(self)
 
 	# カメラ（プレイヤー追従・無限フィールド）
 	camera = Camera2D.new()
@@ -1239,157 +1242,28 @@ func _start_attr_select() -> void:
 
 # 選択→カウントダウン→描画、の間に挟む「3・2・1」（2秒）
 func _start_countdown(attr: String) -> void:
-	game_state = "countdown"
-	var layer := CanvasLayer.new()
-	layer.layer = 10
-	add_child(layer)
-
-	var lbl := _make_label("3", 80, Vector2(W * 0.5 - 30, H * 0.4))
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.6))
-	layer.add_child(lbl)
-
-	var texts := ["3", "2", "1"]
-	var tw := lbl.create_tween()
-	for t in texts:
-		tw.tween_callback(func(): lbl.text = t)
-		tw.tween_interval(2.0 / 3.0)
-	tw.tween_callback(func():
-		layer.queue_free()
-		_start_drawing(attr)
-	)
+	_draw_system.start_countdown(attr)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 描画フェーズ
+# 描画フェーズ（実体は DrawSystem.gd に分離済み）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 func _start_drawing(suggested_shape: String) -> void:
-	game_state = "drawing"
-	draw_shape = suggested_shape
-	draw_sigil_id = GameData.get_equipped_sigil(suggested_shape)
-	draw_timer = DRAW_DURATION + draw_time_bonus
-	coating_count = 0
-	coating_power = 0
-	trace_pts.clear()
-	trace_line.clear_points()
-	trace_line.modulate = Color.WHITE
-	draw_touch_id = -1
-	guide_line.visible = true
-	guide_glow.visible = true
-	guide_rune_root.visible = true
-	trace_line.visible = true
-	draw_timer_lbl.visible = true
-	cov_lbl.visible = true
-	coating_lbl.visible = true
-	confirm_btn.visible = true
-	_refresh_draw_guide()
-	draw_layer.visible = true
+	_draw_system.start_drawing(suggested_shape)
 
 func _refresh_draw_guide() -> void:
-	var cx := W * 0.5
-	var cy := H * 0.5
-	var sigil_data := _Sigils.get_data(draw_sigil_id)
-	var contour_defs: Array = sigil_data.get("contours", [{"shape": draw_shape, "radius_ratio": 1.0, "weight": 1.0}])
-	var guide_scale: float = sigil_data.get("guide_scale", 1.0)
-	current_guide_r = DRAW_GUIDE_R * guide_scale
-
-	contour_weights.clear()
-	for c in contour_defs:
-		contour_weights.append((c as Dictionary).get("weight", 1.0) as float)
-
-	sample_contours = _Shapes.make_sample_contours(contour_defs, cx, cy, current_guide_r)
-	var contours := _Shapes.make_guide_contours(contour_defs, cx, cy, current_guide_r)
-
-	guide_line.clear_points()
-	guide_glow.clear_points()
-	for p in contours[0]:
-		guide_line.add_point(p)
-		guide_glow.add_point(p)
-
-	if contours.size() > 1:
-		guide_line_inner.clear_points()
-		guide_glow_inner.clear_points()
-		for p in contours[1]:
-			guide_line_inner.add_point(p)
-			guide_glow_inner.add_point(p)
-		guide_line_inner.visible = true
-		guide_glow_inner.visible = true
-	else:
-		guide_line_inner.visible = false
-		guide_glow_inner.visible = false
-
-	if contours.size() > 2:
-		guide_line_2.clear_points()
-		guide_glow_2.clear_points()
-		for p in contours[2]:
-			guide_line_2.add_point(p)
-			guide_glow_2.add_point(p)
-		guide_line_2.visible = true
-		guide_glow_2.visible = true
-	else:
-		guide_line_2.visible = false
-		guide_glow_2.visible = false
-
-	var shape_colors := {
-		"circle":   Color(0.5, 0.7, 1.0, 0.8),
-		"triangle": Color(1.0, 0.5, 0.5, 0.8),
-		"square":   Color(0.85, 0.6, 0.2, 0.8),
-	}
-	var sc: Color = shape_colors.get(draw_shape, Color(1, 1, 1, 0.65))
-	guide_base_color = sc
-
-	for i in range(guide_rune_marks.size()):
-		var ang := float(i) / float(guide_rune_marks.size()) * TAU
-		guide_rune_marks[i].position = Vector2(cos(ang), sin(ang)) * current_guide_r
-
-	_apply_guide_intensity()
+	_draw_system.refresh_draw_guide()
 
 func _apply_guide_intensity() -> void:
-	# 周回を重ねるほどガイド自体が明るく・太くなり、強くなっていく実感を描画中に出す
-	var boost := clampf(float(coating_count) * 0.15, 0.0, 1.0)
-	guide_line.default_color = guide_base_color.lerp(Color.WHITE, boost)
-	guide_line.width = 6.0 + boost * 8.0
-	guide_glow.default_color = Color(guide_base_color.r, guide_base_color.g, guide_base_color.b, 0.18 + boost * 0.35)
-	guide_glow.width = 22.0 + boost * 24.0
-	if guide_line_inner.visible:
-		guide_line_inner.default_color = guide_line.default_color
-		guide_line_inner.width = guide_line.width
-		guide_glow_inner.default_color = guide_glow.default_color
-		guide_glow_inner.width = guide_glow.width
-	if guide_line_2.visible:
-		guide_line_2.default_color = guide_line.default_color
-		guide_line_2.width = guide_line.width
-		guide_glow_2.default_color = guide_glow.default_color
-		guide_glow_2.width = guide_glow.width
+	_draw_system.apply_guide_intensity()
 
-	var rune_col := guide_base_color.lerp(Color.WHITE, boost)
-	var rune_scale := 1.0 + boost * 0.6
-	for mark in guide_rune_marks:
-		mark.color = rune_col
-		mark.scale = Vector2.ONE * rune_scale
-
-# ブラシの判定半径。紋章サイズ（tier・輪郭）に関わらず絶対px固定（2026-07-27）
 func _brush_radius() -> float:
-	return DRAW_BRUSH_R * brush_ratio_mult
+	return _draw_system.brush_radius()
 
 func _update_drawing(delta: float) -> void:
-	draw_timer -= delta
-	draw_timer_lbl.text = "%.1f" % maxf(0.0, draw_timer)
-
-	if not trace_pts.is_empty() and not sample_contours.is_empty():
-		var cov := _calc_coverage_contours(trace_pts, sample_contours)
-		cov_lbl.text = "%d%%" % int(cov * 100)
-		trace_line.modulate = _cov_color(cov)
-	else:
-		cov_lbl.text = "0%"
-
-	if draw_timer <= 0.0:
-		_show_summon_result()
+	_draw_system.update_drawing(delta)
 
 func _cov_color(cov: float) -> Color:
-	if cov >= 0.90: return Color(1.0, 1.0, 0.3)   # 黄：PERFECT
-	if cov >= 0.75: return Color(0.4, 1.0, 0.9)   # シアン：GREAT
-	if cov >= 0.55: return Color(0.4, 0.6, 1.0)   # 青：まあまあ
-	if cov >= 0.30: return Color(1.0, 0.65, 0.3)  # 橙：微妙
-	return Color(1.0, 0.4, 0.4)                   # 赤：ずれてる
+	return _draw_system.cov_color(cov)
 
 func _show_summon_result() -> void:
 	game_state = "summon_result"
@@ -1754,98 +1628,19 @@ func _handle_joystick(event: InputEvent) -> void:
 
 
 func _handle_draw_input(event: InputEvent) -> void:
-	# ボタン領域（上部100px）のタッチはボタンに任せてトレースに追加しない
-	var pos: Vector2
-	if event is InputEventScreenTouch:
-		pos = (event as InputEventScreenTouch).position
-	elif event is InputEventScreenDrag:
-		pos = (event as InputEventScreenDrag).position
-	else:
-		return
-	if pos.y < 100.0:
-		return
-
-	if event is InputEventScreenTouch:
-		if event.pressed and draw_touch_id == -1:
-			draw_touch_id = event.index
-			_add_to_trace(event.position)
-		elif not event.pressed and event.index == draw_touch_id:
-			draw_touch_id = -1
-	elif event is InputEventScreenDrag and event.index == draw_touch_id:
-		_add_to_trace(event.position)
+	_draw_system.handle_draw_input(event)
 
 func _evaluate_lap() -> void:
-	if trace_pts.is_empty() or sample_contours.is_empty(): return
-	var cov := _calc_coverage_contours(trace_pts, sample_contours)
-	trace_pts.clear()
-	trace_line.clear_points()
-	trace_line.modulate = Color.WHITE
-	cov_lbl.text = "0%"
+	_draw_system.evaluate_lap()
 
-	var lap_gain: Dictionary = _Sigils.get_data(draw_sigil_id).get("lap_gain", {"perfect": 35, "great": 20, "good": 10})
-	var gain := 0
-	var label := ""
-	var col := Color.WHITE
-	var grade := ""
-	if cov >= 0.90:
-		gain = lap_gain["perfect"] as int; label = "PERFECT!!"; col = Color(1.0, 1.0, 0.3); grade = "perfect"
-	elif cov >= 0.75:
-		gain = lap_gain["great"] as int;   label = "GREAT!";    col = Color(0.4, 1.0, 0.9); grade = "great"
-	elif cov >= 0.70:
-		gain = lap_gain["good"] as int;    label = "GOOD";      col = Color(0.5, 0.7, 1.0); grade = "good"
-	else:
-		gain = MISS_GAIN; label = "MISS..."; col = Color(0.8, 0.4, 0.4); grade = "miss"
-
-	var pitch := 1.0 + minf(0.5, float(coating_count) * 0.08)
-	Sfx.play_lap(grade, pitch)
-	coating_power += gain
-	if grade != "miss":
-		coating_count += 1
-		coating_lbl.text = "×%d" % coating_count
-		_apply_guide_intensity()
-		_spawn_lap_pulse(col)
-		_show_combo_flash(coating_count)
-	_show_lap_flash(label, col)
-	_flash_confirm_btn(col)
-
-# 2026-08-07：ボタンが小さく押しにくかった件の対処と合わせて、押した直後にボタン自体も
-# 判定色でパッと光らせて「押せた・1周終わった」がその場でわかるようにする
 func _flash_confirm_btn(col: Color) -> void:
-	confirm_btn.modulate = Color(col.r * 1.6, col.g * 1.6, col.b * 1.6)
-	var tw := confirm_btn.create_tween()
-	tw.tween_property(confirm_btn, "modulate", Color.WHITE, 0.35)
+	_draw_system.flash_confirm_btn(col)
 
 func _show_combo_flash(count: int) -> void:
-	# 連続成功回数そのものを大きく見せて「積み上がってる」実感を明示する
-	if count < 2: return
-	var size := 24 + mini(24, (count - 1) * 4)
-	var t := clampf(float(count) / 8.0, 0.0, 1.0)
-	var col := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.85, 0.3), t)
-	var lbl := _make_label("%d連続！" % count, size, Vector2(W * 0.5 - 70, H * 0.5 + 22))
-	lbl.custom_minimum_size = Vector2(140, size + 10)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_color_override("font_color", col)
-	draw_layer.add_child(lbl)
-	var tw := lbl.create_tween()
-	tw.tween_property(lbl, "modulate:a", 0.0, 0.6)
-	tw.tween_callback(lbl.queue_free)
-	shake_power = maxf(shake_power, 4.0 + minf(10.0, float(count) * 1.0))
+	_draw_system.show_combo_flash(count)
 
 func _spawn_lap_pulse(col: Color) -> void:
-	# 成功ラップのたびにガイドの輪から光の輪が広がる。周回を重ねるほど大きく広がる
-	var ring := Line2D.new()
-	ring.width = 4.0
-	ring.default_color = col
-	for p in _make_ring_points(DRAW_GUIDE_R, 1.0):
-		ring.add_point(p)
-	ring.position = Vector2(W * 0.5, H * 0.5)
-	draw_layer.add_child(ring)
-	var grow := 1.15 + minf(0.6, float(coating_count) * 0.08)
-	var tw := ring.create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(ring, "scale", Vector2.ONE * grow, 0.4)
-	tw.tween_property(ring, "modulate:a", 0.0, 0.4)
-	tw.chain().tween_callback(ring.queue_free)
+	_draw_system.spawn_lap_pulse(col)
 
 func _show_wave_flash(wave: int) -> void:
 	var lbl := _make_label("WAVE  %d" % wave, 48, Vector2(W * 0.5 - 80, H * 0.38))
@@ -1874,14 +1669,7 @@ func _show_evolve_flash(evolved: String, pos: Vector2) -> void:
 	tween.tween_callback(lbl.queue_free)
 
 func _show_lap_flash(label: String, col: Color) -> void:
-	var lbl := _make_label(label, 40, Vector2(W * 0.5 - 80, H * 0.5 - 30))
-	lbl.add_theme_color_override("font_color", col)
-	if jp_font:
-		lbl.add_theme_font_override("font", jp_font)
-	draw_layer.add_child(lbl)
-	var tween := create_tween()
-	tween.tween_property(lbl, "modulate:a", 0.0, 0.7)
-	tween.tween_callback(lbl.queue_free)
+	_draw_system.show_lap_flash(label, col)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ゲームオーバー
@@ -2079,38 +1867,13 @@ func _update_ui() -> void:
 # 新しい点を追加するとき、前の点との線分上に補間点も trace_pts に追加する
 # → 「見えてる線 = 評価される線」になる
 func _add_to_trace(pos: Vector2) -> void:
-	trace_line.add_point(pos)
-	if not trace_pts.is_empty():
-		var prev: Vector2 = trace_pts.back()
-		var dist: float   = prev.distance_to(pos)
-		var step: float   = DRAW_BRUSH_R * 0.7
-		if dist > step:
-			var n: int = int(dist / step)
-			for i in range(1, n):
-				trace_pts.append(prev.lerp(pos, float(i) / float(n)))
-	trace_pts.append(pos)
+	_draw_system.add_to_trace(pos)
 
 func _calc_coverage(t_pts: Array[Vector2], s_pts: Array[Vector2], brush_r: float) -> float:
-	if s_pts.is_empty() or t_pts.is_empty(): return 0.0
-	var covered := 0
-	for sp in s_pts:
-		for tp in t_pts:
-			if tp.distance_to(sp) < brush_r:
-				covered += 1
-				break
-	return float(covered) / float(s_pts.size())
+	return _draw_system.calc_coverage(t_pts, s_pts, brush_r)
 
-# 輪郭ごとに個別採点し、重み付き平均を取る（2026-07-27：最小値方式から変更）。
-# 片方の輪郭だけ失敗しても即座に総合スコアが崩れないようにしつつ、内側を無視して
-# 外形だけで稼ぐこともできないよう、輪郭ごとの重み（Sigils.gdのcontours定義）で調整する
 func _calc_coverage_contours(t_pts: Array[Vector2], contours: Array) -> float:
-	if contours.is_empty(): return 0.0
-	var brush_r := _brush_radius()
-	var total := 0.0
-	for i in contours.size():
-		var w: float = contour_weights[i] if i < contour_weights.size() else 1.0
-		total += _calc_coverage(t_pts, contours[i], brush_r) * w
-	return total
+	return _draw_system.calc_coverage_contours(t_pts, contours)
 
 func _nearest_enemy(from: Vector2) -> Dictionary:
 	var best : Dictionary = {}
