@@ -234,6 +234,10 @@ func _build_rain_impact_sfx() -> AudioStreamWAV:
 	# 紋章の雨（水）着弾音：旧仕様はplay_evolve()（進化ファンファーレ）を流用しており、
 	# 「魔法の雫が跳ねる」場面にファンファーレはミスマッチだったため専用音を新設。
 	# 軽いチャイム＋控えめなノイズの「パシャッ」という水滴の跳ねる質感
+	# 2026-09-25：「雨の音があまり聞こえない、通常攻撃の方が大きいかも」との指摘。
+	# 味方複数体が同時に基礎攻撃(play_shoot)を鳴らしている中に紋章の雨の着弾音（単発・柔らかめ）が
+	# 埋もれていたとみられるため、ミックスの中で聞き取りやすいよう音量を底上げ（最終ゲイン0.5→0.8、
+	# 各要素のピークも底上げ）した
 	var dur := 0.12
 	var n   := int(MIX_RATE * dur)
 	var data := PackedByteArray()
@@ -241,9 +245,9 @@ func _build_rain_impact_sfx() -> AudioStreamWAV:
 	for i in range(n):
 		var t := float(i) / MIX_RATE
 		var env := exp(-t * 22.0)
-		var chime := sin(TAU * 1500.0 * t) * 0.4 + sin(TAU * 1900.0 * t) * 0.25
-		var splash := randf_range(-1.0, 1.0) * 0.3 * exp(-t * 60.0)
-		var s : float = (chime + splash) * env * 0.5
+		var chime := sin(TAU * 1500.0 * t) * 0.55 + sin(TAU * 1900.0 * t) * 0.35
+		var splash := randf_range(-1.0, 1.0) * 0.4 * exp(-t * 60.0)
+		var s : float = (chime + splash) * env * 0.8
 		data.encode_s16(i * 2, int(clamp(s, -1.0, 1.0) * 32767.0))
 	return _wrap_wav(data)
 
