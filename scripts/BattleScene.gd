@@ -1539,10 +1539,14 @@ func _attach_sigil_ring(parent: Node2D, sz: float, power: int) -> void:
 	else:
 		arc_frac = 0.55; ring_col = Color(0.65, 0.65, 0.7, 0.6)
 
+	# 2026-09-25：このring・後述のオーラはparent（仲間のSprite2D）の子として追加しているが、
+	# parentは元絵を表示サイズまで縮小するscaleを持つため、そのままだとリングもろとも二重に
+	# 縮小されて実質見えなくなっていた（守さんの実機確認で「紋章リングが見えない」と発覚）。
+	# 半径・太さをparent.scaleの逆数で打ち消し、parentの縮小率に関係なく絶対サイズで見せる
 	var ring := Line2D.new()
-	ring.width = 3.0
+	ring.width = 3.0 / parent.scale.x
 	ring.default_color = ring_col
-	for p in _make_ring_points(sz * 1.7, arc_frac):
+	for p in _make_ring_points((sz * 1.7) / parent.scale.x, arc_frac):
 		ring.add_point(p)
 	parent.add_child(ring)
 
@@ -1563,16 +1567,19 @@ func _attach_power_aura(parent: Node2D, sz: float, power: int) -> void:
 	var aura_r := sz * (3.2 if strong else 2.4)
 	var col := Color(1.0, 0.85, 0.3) if strong else Color(0.75, 0.9, 1.0)
 
+	# 2026-09-25：_attach_sigil_ringと同じ理由（parentの縮小scaleを二重に受けて潰れる）で
+	# aura_rをparent.scaleの逆数で打ち消す。2026-08-26時点の「サイズ・アルファ拡大」修正は
+	# この根本原因に触れていなかったため、実質的には直っていなかったとみられる
 	var aura := Polygon2D.new()
-	aura.polygon = _make_ngon(24, aura_r)
+	aura.polygon = _make_ngon(24, aura_r / parent.scale.x)
 	aura.color = Color(col.r, col.g, col.b, 0.5 if strong else 0.32)
 	aura.z_index = -1
 	parent.add_child(aura)
 
 	var ring := Line2D.new()
-	ring.width = 2.6 if strong else 1.8
+	ring.width = (2.6 if strong else 1.8) / parent.scale.x
 	ring.default_color = col
-	for p in _make_ring_points(aura_r, 1.0):
+	for p in _make_ring_points(aura_r / parent.scale.x, 1.0):
 		ring.add_point(p)
 	ring.z_index = -1
 	parent.add_child(ring)

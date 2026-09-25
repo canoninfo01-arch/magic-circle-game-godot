@@ -175,12 +175,16 @@ func random_edge_pos() -> Vector2:
 		2: return battle.player_pos + Vector2(-hw, randf_range(-hh, hh))
 		_: return battle.player_pos + Vector2( hw, randf_range(-hh, hh))
 
-# エリート個体のリング表示（天敵ウォードと同じ発想。色でtough/swiftの系統が直感的にわかるようにする）
+# 2026-09-25：リング（エリート/天敵ウォード/追跡者/詠唱者）は敵本体（Sprite2D）の子として
+# add_childしているため、本体が元絵1024pxを表示サイズまで縮小するscale（大抵0.03〜0.1倍）を
+# 二重に受けてしまい、本来の半径・太さの数%まで潰れて実質見えなくなっていた（守さんの実機確認・
+# こちらのブラウザ確認どちらでも「リングが見えない」と一致）。半径・太さをparent.scaleの逆数で
+# 打ち消し、本体の縮小に関係なく意図した絶対サイズで見えるようにする
 func attach_elite_ring(parent: Node2D, r: float, ring_color: Color) -> void:
 	var ring := Line2D.new()
-	ring.width = 2.6
+	ring.width = 2.6 / parent.scale.x
 	ring.default_color = ring_color
-	for p in battle._make_ring_points(r * 1.35, 1.0):
+	for p in battle._make_ring_points((r * 1.35) / parent.scale.x, 1.0):
 		ring.add_point(p)
 	parent.add_child(ring)
 	var tw := ring.create_tween()
@@ -190,9 +194,9 @@ func attach_elite_ring(parent: Node2D, r: float, ring_color: Color) -> void:
 # 追跡者のリング表示（2026-09-24追加）。エリート・天敵ウォードと見分けがつくよう紫・逆回転にした
 func attach_hunter_ring(parent: Node2D, r: float) -> void:
 	var ring := Line2D.new()
-	ring.width = 2.2
+	ring.width = 2.2 / parent.scale.x
 	ring.default_color = _Data.HUNTER_RING_COLOR
-	for p in battle._make_ring_points(r * 1.65, 1.0):
+	for p in battle._make_ring_points((r * 1.65) / parent.scale.x, 1.0):
 		ring.add_point(p)
 	parent.add_child(ring)
 	var tw := ring.create_tween()
@@ -203,9 +207,9 @@ func attach_hunter_ring(parent: Node2D, r: float) -> void:
 # 感触を出すため脈動（拡大縮小）にして視覚言語を分けた
 func attach_caster_ring(parent: Node2D, r: float) -> void:
 	var ring := Line2D.new()
-	ring.width = 2.4
+	ring.width = 2.4 / parent.scale.x
 	ring.default_color = _Data.CASTER_RING_COLOR
-	for p in battle._make_ring_points(r * 1.5, 1.0):
+	for p in battle._make_ring_points((r * 1.5) / parent.scale.x, 1.0):
 		ring.add_point(p)
 	parent.add_child(ring)
 	var tw := ring.create_tween()
@@ -217,9 +221,9 @@ func attach_caster_ring(parent: Node2D, r: float) -> void:
 func attach_predator_ring(parent: Node2D, r: float, ward: String) -> void:
 	var col: Color = _Data.PREDATOR_WARD_COLOR.get(ward, Color.WHITE)
 	var ring := Line2D.new()
-	ring.width = 2.2
+	ring.width = 2.2 / parent.scale.x
 	ring.default_color = col
-	for p in battle._make_ring_points(r * 1.5, 1.0):
+	for p in battle._make_ring_points((r * 1.5) / parent.scale.x, 1.0):
 		ring.add_point(p)
 	parent.add_child(ring)
 	var tw := ring.create_tween()
