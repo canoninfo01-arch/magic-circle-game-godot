@@ -50,6 +50,19 @@ jobs:
           mkdir -p build
           godot --headless --export-release "Web" build/index.html
 
+      - name: Package for itch.io (service worker 注入前の素の書き出し)
+        run: |
+          mkdir -p itch
+          cd build && zip -r ../itch/sigil-web-itch.zip . && cd ..
+          unzip -l itch/sigil-web-itch.zip
+
+      - name: Upload itch.io zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigil-web-itch
+          path: itch/sigil-web-itch.zip
+          retention-days: 30
+
       - name: Add COOP/COEP service worker (GitHub Pages 対応)
         run: |
           cp coi-sw.js build/coi-sw.js
