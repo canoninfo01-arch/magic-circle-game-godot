@@ -63,7 +63,7 @@ func _build_ui() -> void:
 	sub.add_theme_color_override("font_color", Color(0.62, 0.6, 0.78))
 	layer.add_child(sub)
 
-	zankou_lbl = _make_label("残光: %d" % GameData.zankou, 14, Vector2(14, 14))
+	zankou_lbl = _make_label(tr("残光: %d") % GameData.zankou, 14, Vector2(14, 14))
 	zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
 	layer.add_child(zankou_lbl)
 
@@ -156,7 +156,7 @@ func _build_stage_row(layer: CanvasLayer, row_y: float) -> void:
 		var chip := Button.new()
 		chip.size = Vector2(chip_w, 52)
 		chip.position = Vector2(cx, chip_y)
-		chip.text = "%s\n%s" % [STAGE_LABELS[stage], STAGE_SUBLABEL[stage]]
+		chip.text = "%s\n%s" % [STAGE_LABELS[stage], tr(STAGE_SUBLABEL[stage] as String)]
 		if jp_font:
 			chip.add_theme_font_override("font", jp_font)
 		chip.add_theme_font_size_override("font_size", 13)
@@ -202,7 +202,7 @@ func _refresh_stage_buttons() -> void:
 
 func _build_attr_row(layer: CanvasLayer, attr: String, row_y: float, row_h: float) -> void:
 	var accent: Color = ATTR_COLORS[attr]
-	var label := _make_label("%s属性" % (ATTR_LABELS[attr] as String), 18, Vector2(30, row_y))
+	var label := _make_label(tr("%s属性") % tr(ATTR_LABELS[attr] as String), 18, Vector2(30, row_y))
 	label.add_theme_color_override("font_color", accent)
 	layer.add_child(label)
 
@@ -337,7 +337,7 @@ func _open_upgrade_panel() -> void:
 	title.add_theme_color_override("font_color", Color(0.85, 0.78, 1.0))
 	upgrade_layer.add_child(title)
 
-	var balance_lbl := _make_centered_label("残光: %d" % GameData.zankou, 18, H * 0.10 + 42, 26)
+	var balance_lbl := _make_centered_label(tr("残光: %d") % GameData.zankou, 18, H * 0.10 + 42, 26)
 	balance_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
 	upgrade_layer.add_child(balance_lbl)
 
@@ -360,7 +360,7 @@ func _open_upgrade_panel() -> void:
 		Sfx.play_tap()
 		upgrade_layer.queue_free()
 		upgrade_layer = null
-		zankou_lbl.text = "残光: %d" % GameData.zankou
+		zankou_lbl.text = tr("残光: %d") % GameData.zankou
 	)
 	upgrade_layer.add_child(close_btn)
 
@@ -393,13 +393,13 @@ func _build_upgrade_row(layer: CanvasLayer, key: String, row_y: float, balance_l
 			buy_btn.text = "MAX"
 			buy_btn.disabled = true
 		else:
-			buy_btn.text = "強化 (%d)" % cost
+			buy_btn.text = tr("強化 (%d)") % cost
 			buy_btn.disabled = not GameData.can_afford_upgrade(key)
 
 	buy_btn.pressed.connect(func():
 		Sfx.play_tap()
 		if GameData.buy_upgrade(key):
-			balance_lbl.text = "残光: %d" % GameData.zankou
+			balance_lbl.text = tr("残光: %d") % GameData.zankou
 			for r in all_refreshers:
 				r.call()
 	)

@@ -55,7 +55,7 @@ func show_summon_result() -> void:
 	battle.draw_layer.add_child(title)
 	battle.summon_result_nodes.append(title)
 
-	var stat: Label = battle._make_label("パワー %d（%d周）" % [coating_power, coating_count], 16, Vector2(w * 0.5 - 100, h * 0.28 + 56))
+	var stat: Label = battle._make_label(tr("パワー %d（%d周）") % [coating_power, coating_count], 16, Vector2(w * 0.5 - 100, h * 0.28 + 56))
 	stat.custom_minimum_size = Vector2(200, 26)
 	stat.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stat.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))

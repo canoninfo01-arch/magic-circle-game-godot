@@ -328,7 +328,7 @@ func _build_ui() -> void:
 	ally_lbl = _make_label("仲間: 0", 14, Vector2(14, 50))
 	ui_layer.add_child(ally_lbl)
 
-	frag_lbl = _make_label("召喚まで: 0/%d" % fragment_threshold, 14, Vector2(14, 72))
+	frag_lbl = _make_label(tr("召喚まで: %d/%d") % [0, fragment_threshold], 14, Vector2(14, 72))
 	ui_layer.add_child(frag_lbl)
 
 	var frag_bar_bg := ColorRect.new()
@@ -1385,7 +1385,7 @@ func _show_hint(key: String, text: String, pos: Vector2) -> void:
 func _fmt_time(t: float) -> String:
 	var m := int(t) / 60
 	var s := int(t) % 60
-	return "%d:%02d" % [m, s] if m > 0 else "%d秒" % int(t)
+	return "%d:%02d" % [m, s] if m > 0 else tr("%d秒") % int(t)
 
 func _load_save() -> void:
 	var cfg := ConfigFile.new()
@@ -1481,18 +1481,18 @@ func _game_over() -> void:
 	over_lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 	ui_layer.add_child(over_lbl)
 
-	var score_lbl := _make_label(_fmt_time(elapsed_time) + " 生存", 30, Vector2(W * 0.5 - 80, H * 0.43))
+	var score_lbl := _make_label(tr("%s 生存") % _fmt_time(elapsed_time), 30, Vector2(W * 0.5 - 80, H * 0.43))
 	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	ui_layer.add_child(score_lbl)
 
-	var best_txt  := "NEW RECORD!!" if is_new else "ベスト: " + _fmt_time(best_time)
+	var best_txt  := "NEW RECORD!!" if is_new else tr("ベスト: %s") % _fmt_time(best_time)
 	var best_col  := Color(1.0, 0.9, 0.2) if is_new else Color(0.6, 0.6, 0.6)
 	var best_lbl  := _make_label(best_txt, 22, Vector2(W * 0.5 - 80, H * 0.51))
 	best_lbl.add_theme_color_override("font_color", best_col)
 	ui_layer.add_child(best_lbl)
 
 	if zankou_gain > 0:
-		var zankou_lbl := _make_label("残光 +%d" % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.56))
+		var zankou_lbl := _make_label(tr("残光 +%d") % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.56))
 		zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
 		ui_layer.add_child(zankou_lbl)
 
@@ -1520,12 +1520,12 @@ func _stage_clear() -> void:
 	clear_lbl.add_theme_color_override("font_color", Color(0.6, 1.0, 0.7))
 	ui_layer.add_child(clear_lbl)
 
-	var score_lbl := _make_label(_fmt_time(elapsed_time) + " 生存", 26, Vector2(W * 0.5 - 70, H * 0.38))
+	var score_lbl := _make_label(tr("%s 生存") % _fmt_time(elapsed_time), 26, Vector2(W * 0.5 - 70, H * 0.38))
 	score_lbl.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	ui_layer.add_child(score_lbl)
 
 	if zankou_gain > 0:
-		var zankou_lbl := _make_label("残光 +%d" % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.42))
+		var zankou_lbl := _make_label(tr("残光 +%d") % zankou_gain, 18, Vector2(W * 0.5 - 60, H * 0.42))
 		zankou_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 1.0))
 		ui_layer.add_child(zankou_lbl)
 
@@ -1551,8 +1551,8 @@ func _stage_clear() -> void:
 func _update_ui() -> void:
 	hp_lbl.text   = "HP: %d/%d" % [player_hp, player_hp_max]
 	time_lbl.text = "%.0fs" % elapsed_time
-	ally_lbl.text = "仲間: %d / %d" % [allies.size(), MAX_ALLIES]
-	frag_lbl.text = "召喚まで: %d/%d" % [fragment_count, fragment_threshold]
+	ally_lbl.text = tr("仲間: %d / %d") % [allies.size(), MAX_ALLIES]
+	frag_lbl.text = tr("召喚まで: %d/%d") % [fragment_count, fragment_threshold]
 	hp_bar_fill.size.x = hp_bar_w * clampf(float(player_hp) / float(player_hp_max), 0.0, 1.0)
 	frag_bar_fill.size.x = hp_bar_w * clampf(float(fragment_count) / float(fragment_threshold), 0.0, 1.0)
 

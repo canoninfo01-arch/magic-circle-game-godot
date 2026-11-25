@@ -234,7 +234,7 @@ func show_combo_flash(count: int) -> void:
 	var size := 24 + mini(24, (count - 1) * 4)
 	var t := clampf(float(count) / 8.0, 0.0, 1.0)
 	var col := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.85, 0.3), t)
-	var lbl: Label = battle._make_label("%d連続！" % count, size, Vector2(battle.W * 0.5 - 70, battle.H * 0.5 + 22))
+	var lbl: Label = battle._make_label(tr("%d連続！") % count, size, Vector2(battle.W * 0.5 - 70, battle.H * 0.5 + 22))
 	lbl.custom_minimum_size = Vector2(140, size + 10)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.add_theme_color_override("font_color", col)
