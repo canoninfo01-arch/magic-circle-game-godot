@@ -50,6 +50,27 @@ func _build_ui() -> void:
 	tw.tween_property(prompt, "modulate:a", 0.2, 0.7)
 	tw.tween_property(prompt, "modulate:a", 1.0, 0.7)
 
+	# 2026-11-25：英語化。言語切り替えボタン（押すたびに 日本語⇔English。選択は保存される）
+	lang_btn = Button.new()
+	lang_btn.size = Vector2(120, 42)
+	lang_btn.position = Vector2(W - 120 - 14, 14)
+	lang_btn.add_theme_font_size_override("font_size", 16)
+	if jp_font:
+		lang_btn.add_theme_font_override("font", jp_font)
+	_refresh_lang_btn()
+	lang_btn.pressed.connect(func():
+		Sfx.unlock()
+		Sfx.play_tap()
+		Loc.set_lang("ja" if Loc.is_en() else "en")
+		_refresh_lang_btn())
+	layer.add_child(lang_btn)
+
+var lang_btn: Button = null
+
+# ボタンには「押すと切り替わる先の言語」を出す
+func _refresh_lang_btn() -> void:
+	lang_btn.text = "日本語" if Loc.is_en() else "English"
+
 func _make_centered_label(txt: String, font_size: int, y: float, box_h: float) -> Label:
 	var lbl := Label.new()
 	lbl.text = txt
@@ -65,6 +86,9 @@ func _make_centered_label(txt: String, font_size: int, y: float, box_h: float) -
 
 func _unhandled_input(event: InputEvent) -> void:
 	if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed):
+		# 言語ボタンを押したタッチは、ボタンが拾わないタッチ側のイベントもここへ来るので、開始扱いにしない
+		if lang_btn and lang_btn.get_global_rect().has_point(event.position):
+			return
 		Sfx.unlock()
 		Sfx.play_tap()
 		get_tree().change_scene_to_file("res://scenes/LoadoutScene.tscn")
